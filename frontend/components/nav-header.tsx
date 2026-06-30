@@ -1,10 +1,13 @@
 'use client'
 
+import type { AuthUser } from '@/lib/api'
+
 interface NavHeaderProps {
   activeTab: string
   onTabChange: (tab: string) => void
   onBackToHome: () => void
   isLoggedIn: boolean
+  user: AuthUser | null
   hasAnalysisData: boolean
   onLogin: () => void
   onSignup: () => void
@@ -16,6 +19,7 @@ export function NavHeader({
   onTabChange,
   onBackToHome,
   isLoggedIn,
+  user,
   hasAnalysisData,
   onLogin,
   onSignup,
@@ -109,8 +113,9 @@ export function NavHeader({
                       color: 'oklch(0.65 0.14 195)',
                     }}
                   >
-                    U
+                    {(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}
                   </div>
+                  <span className="hidden lg:inline max-w-40 truncate">{user?.name || user?.email}</span>
                 </div>
                 <button
                   onClick={onLogout}

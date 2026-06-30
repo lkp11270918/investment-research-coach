@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import os
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth import authenticate_user, create_access_token, create_user, get_current_user, init_auth_db, to_auth_user
 from .file_parsers import FileParseError, parse_uploaded_file
-from .models import AnalyzeRequest, AnalyzeResponse, HealthResponse, ReviewRequest
+from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, HealthResponse, LoginRequest, RegisterRequest, ReviewRequest
 from .workflow_runner import run_analysis_workflow, run_review_workflow
 
 
@@ -39,9 +40,33 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def startup() -> None:
+    init_auth_db()
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
+
+
+@app.post("/api/auth/register", response_model=AuthResponse)
+def register(request: RegisterRequest) -> AuthResponse:
+    user = create_user(email=request.email, password=request.password, name=request.name)
+    auth_user = to_auth_user(user)
+    return AuthResponse(access_token=create_access_token(user.user_id), user=auth_user)
+
+
+@app.post("/api/auth/login", response_model=AuthResponse)
+def login(request: LoginRequest) -> AuthResponse:
+    user = authenticate_user(email=request.email, password=request.password)
+    auth_user = to_auth_user(user)
+    return AuthResponse(access_token=create_access_token(user.user_id), user=auth_user)
+
+
+@app.get("/api/me", response_model=AuthUser)
+def me(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    return current_user
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)

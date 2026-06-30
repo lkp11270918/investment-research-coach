@@ -10,6 +10,7 @@ __pycache__/
 data/runs/*.json
 data/uploads/*
 data/bad_cases/*.json
+data/app.db
 
 frontend/node_modules/
 frontend/.next/

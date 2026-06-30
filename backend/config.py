@@ -29,6 +29,8 @@ class Settings:
     openai_base_url: str
     use_llm_agents: bool
     llm_timeout_seconds: int
+    database_url: str
+    auth_secret_key: str
 
 
 def get_settings() -> Settings:
@@ -39,4 +41,6 @@ def get_settings() -> Settings:
         openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
         use_llm_agents=os.environ.get("USE_LLM_AGENTS", "true").lower() not in {"0", "false", "no"},
         llm_timeout_seconds=int(os.environ.get("LLM_TIMEOUT_SECONDS", "60")),
+        database_url=os.environ.get("DATABASE_URL", f"sqlite:///{PROJECT_ROOT / 'data' / 'app.db'}"),
+        auth_secret_key=os.environ.get("AUTH_SECRET_KEY", "dev-only-change-this-secret"),
     )

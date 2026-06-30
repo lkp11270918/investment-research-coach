@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { LandingPage } from '@/components/landing-page'
 import { AuthModal } from '@/components/auth-modal'
 import { NavHeader } from '@/components/nav-header'
@@ -8,7 +8,8 @@ import { InputPanel } from '@/components/input-panel'
 import { AnalysisPanel, type AnalysisData } from '@/components/analysis-panel'
 import { MemoPanel } from '@/components/memo-panel'
 import { ReviewPanel } from '@/components/review-panel'
-import type { BackendMemo } from '@/lib/api'
+import type { AuthUser, BackendMemo } from '@/lib/api'
+import { clearStoredToken, fetchCurrentUser, getStoredToken } from '@/lib/api'
 
 type AppView = 'landing' | 'app'
 type AuthMode = 'login' | 'signup'
@@ -17,9 +18,25 @@ export default function Page() {
   const [view, setView] = useState<AppView>('landing')
   const [authModal, setAuthModal] = useState<AuthMode | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [activeTab, setActiveTab] = useState('input')
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null)
   const [memo, setMemo] = useState<BackendMemo | null>(null)
+
+  useEffect(() => {
+    const token = getStoredToken()
+    if (!token) return
+    fetchCurrentUser(token)
+      .then(user => {
+        setCurrentUser(user)
+        setIsLoggedIn(true)
+      })
+      .catch(() => {
+        clearStoredToken()
+        setCurrentUser(null)
+        setIsLoggedIn(false)
+      })
+  }, [])
 
   const handleEnterApp = () => {
     setView('app')
@@ -30,7 +47,8 @@ export default function Page() {
   const handleSignup = () => setAuthModal('signup')
   const handleAuthClose = () => setAuthModal(null)
 
-  const handleAuthSuccess = () => {
+  const handleAuthSuccess = (user: AuthUser) => {
+    setCurrentUser(user)
     setIsLoggedIn(true)
     setAuthModal(null)
     setView('app')
@@ -38,6 +56,8 @@ export default function Page() {
   }
 
   const handleLogout = () => {
+    clearStoredToken()
+    setCurrentUser(null)
     setIsLoggedIn(false)
   }
 
@@ -69,6 +89,7 @@ export default function Page() {
             onTabChange={setActiveTab}
             onBackToHome={() => setView('landing')}
             isLoggedIn={isLoggedIn}
+            user={currentUser}
             hasAnalysisData={!!analysisData}
             onLogin={handleLogin}
             onSignup={handleSignup}

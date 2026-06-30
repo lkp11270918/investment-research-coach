@@ -1,13 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import type { AuthUser } from '@/lib/api'
+import { loginUser, registerUser, storeToken } from '@/lib/api'
 
 type AuthMode = 'login' | 'signup'
 
 interface AuthModalProps {
   mode: AuthMode
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (user: AuthUser) => void
   onSwitchMode: (mode: AuthMode) => void
 }
 
@@ -16,15 +18,23 @@ export function AuthModal({ mode, onClose, onSuccess, onSwitchMode }: AuthModalP
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    // Placeholder: direct success for now
-    setTimeout(() => {
+    setError(null)
+    try {
+      const result = mode === 'login'
+        ? await loginUser({ email, password })
+        : await registerUser({ email, password, name })
+      storeToken(result.access_token)
+      onSuccess(result.user)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '认证失败，请稍后重试')
+    } finally {
       setLoading(false)
-      onSuccess()
-    }, 800)
+    }
   }
 
   return (
@@ -134,6 +144,19 @@ export function AuthModal({ mode, onClose, onSuccess, onSwitchMode }: AuthModalP
               onBlur={e => (e.currentTarget.style.borderColor = 'oklch(0.25 0.01 240)')}
             />
           </div>
+
+          {error && (
+            <div
+              className="rounded-lg px-3 py-2 text-xs"
+              style={{
+                backgroundColor: 'oklch(0.62 0.18 25 / 0.12)',
+                border: '1px solid oklch(0.62 0.18 25 / 0.35)',
+                color: 'oklch(0.78 0.16 25)',
+              }}
+            >
+              {error}
+            </div>
+          )}
 
           <button
             type="submit"

@@ -85,6 +85,30 @@ class WorkflowOptions(BaseModel):
     enable_parallel: bool = True
 
 
+class AuthUser(BaseModel):
+    user_id: str
+    email: str
+    name: str | None = None
+    created_at: datetime
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: AuthUser
+
+
 class CompanyProfile(BaseModel):
     ticker: str | None = None
     company_name: str
