@@ -66,6 +66,9 @@ Main endpoints:
 - `POST /api/analyze`
 - `POST /api/analyze-files`
 - `POST /api/review`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/me`
 
 `POST /api/analyze` supports workflow options for development and frontend previews:
 
@@ -143,12 +146,20 @@ The backend deployment is described by `render.yaml`.
 Required Render environment variables:
 
 ```bash
+DATABASE_URL=postgresql://...
+AUTH_SECRET_KEY=generate_a_long_random_secret
 OPENAI_API_KEY=your_api_key
 OPENAI_MODEL=gpt-4.1-mini
 USE_LLM_AGENTS=true
 LLM_TIMEOUT_SECONDS=60
 CORS_ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
 ```
+
+The account system stores registered users in PostgreSQL. If you deploy with
+`render.yaml` as a Blueprint, Render creates `investment-research-coach-db`,
+injects `DATABASE_URL` from that database, and generates `AUTH_SECRET_KEY`.
+If you configure the service manually, create a Render Postgres database first,
+then set `DATABASE_URL` on the backend service to the database connection string.
 
 Render settings:
 
