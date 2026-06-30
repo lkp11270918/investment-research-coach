@@ -155,11 +155,11 @@ LLM_TIMEOUT_SECONDS=60
 CORS_ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
 ```
 
-The account system stores registered users in PostgreSQL. If you deploy with
-`render.yaml` as a Blueprint, Render creates `investment-research-coach-db`,
-injects `DATABASE_URL` from that database, and generates `AUTH_SECRET_KEY`.
-If you configure the service manually, create a Render Postgres database first,
-then set `DATABASE_URL` on the backend service to the database connection string.
+The account system stores registered users in PostgreSQL. To avoid paid Render
+Postgres usage, create a free external Postgres database such as Neon or
+Supabase, then set the backend service's `DATABASE_URL` to that external
+connection string. `render.yaml` deliberately marks `DATABASE_URL` as
+`sync: false` so the secret is configured in Render instead of committed.
 
 Render settings:
 
