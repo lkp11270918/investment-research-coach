@@ -1,0 +1,98 @@
+from __future__ import annotations
+
+import json
+import os
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+
+from .file_parsers import FileParseError, parse_uploaded_file
+from .models import AnalyzeRequest, AnalyzeResponse, HealthResponse, ReviewRequest
+from .workflow_runner import run_analysis_workflow, run_review_workflow
+
+
+app = FastAPI(
+    title="Value Investing Research Coach",
+    version="0.1.0",
+    description="Material-package-driven buy-side value investing research training agent.",
+)
+
+default_cors_origins = [
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+    "http://127.0.0.1:3001",
+    "http://localhost:3001",
+]
+configured_cors_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=default_cors_origins + configured_cors_origins,
+    allow_origin_regex=os.environ.get("CORS_ALLOWED_ORIGIN_REGEX", r"https://.*\.vercel\.app"),
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    return HealthResponse()
+
+
+@app.post("/api/analyze", response_model=AnalyzeResponse)
+def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
+    state = run_analysis_workflow(request)
+    return AnalyzeResponse(run_id=state.run_id, status="completed", state=state)
+
+
+@app.post("/api/analyze-files", response_model=AnalyzeResponse)
+async def analyze_files(
+    company_profile: str = Form(...),
+    options: str | None = Form(None),
+    text_materials: str | None = Form(None),
+    material_ids: list[str] = Form(default=[]),
+    files: list[UploadFile] = File(default=[]),
+) -> AnalyzeResponse:
+    try:
+        payload = {
+            "company_profile": json.loads(company_profile),
+            "materials": json.loads(text_materials) if text_materials else [],
+            "options": json.loads(options) if options else {},
+        }
+        request = AnalyzeRequest.model_validate(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"请求参数解析失败：{exc}") from exc
+
+    if material_ids and len(material_ids) != len(files):
+        raise HTTPException(status_code=400, detail="material_ids 数量必须与 files 数量一致")
+
+    for index, upload in enumerate(files):
+        data = await upload.read()
+        material_id = material_ids[index] if index < len(material_ids) else None
+        try:
+            material = parse_uploaded_file(
+                filename=upload.filename or f"uploaded-{index}",
+                data=data,
+                material_id=material_id,
+                title=upload.filename,
+            )
+        except FileParseError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        request.materials.append(material)
+
+    if not request.materials:
+        raise HTTPException(status_code=400, detail="请至少提供一份文本资料或上传文件")
+
+    state = run_analysis_workflow(request)
+    return AnalyzeResponse(run_id=state.run_id, status="completed", state=state)
+
+
+@app.post("/api/review", response_model=AnalyzeResponse)
+def review(request: ReviewRequest) -> AnalyzeResponse:
+    state = run_review_workflow(request)
+    return AnalyzeResponse(run_id=state.run_id, status="completed", state=state)

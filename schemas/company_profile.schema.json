@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "company_profile.schema.json",
+  "title": "CompanyProfile",
+  "type": "object",
+  "required": ["company_name", "industry", "user_mode"],
+  "additionalProperties": false,
+  "properties": {
+    "ticker": {
+      "type": ["string", "null"],
+      "description": "Stock code or ticker provided by the user."
+    },
+    "company_name": {
+      "type": "string"
+    },
+    "industry": {
+      "type": "string"
+    },
+    "market": {
+      "type": ["string", "null"],
+      "description": "Market such as A-share, HK, US, or other."
+    },
+    "research_language": {
+      "type": "string",
+      "enum": ["zh", "en"],
+      "default": "zh"
+    },
+    "user_mode": {
+      "type": "string",
+      "enum": ["to_c", "to_b"]
+    },
+    "institution_id": {
+      "type": ["string", "null"]
+    },
+    "created_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  }
+}

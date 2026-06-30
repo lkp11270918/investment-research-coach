@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research_memo.schema.json",
+  "title": "ResearchMemo",
+  "type": "object",
+  "required": [
+    "memo_id",
+    "company_profile",
+    "user_mode",
+    "confidence",
+    "sections",
+    "source_ids",
+    "disclaimer"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "memo_id": {
+      "type": "string"
+    },
+    "company_profile": {
+      "type": "object"
+    },
+    "user_mode": {
+      "type": "string",
+      "enum": ["to_c", "to_b"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["section_id", "title", "body", "evidence_ids"],
+        "additionalProperties": false,
+        "properties": {
+          "section_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          }
+        }
+      }
+    },
+    "source_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "disclaimer": {
+      "type": "string"
+    },
+    "markdown": {
+      "type": ["string", "null"]
+    }
+  }
+}

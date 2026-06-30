@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "source_document.schema.json",
+  "title": "SourceDocument",
+  "type": "object",
+  "required": ["source_id", "title", "source_type", "provided_by_user"],
+  "additionalProperties": false,
+  "properties": {
+    "source_id": {
+      "type": "string",
+      "description": "Stable source identifier used for traceability."
+    },
+    "title": {
+      "type": "string"
+    },
+    "source_type": {
+      "type": "string",
+      "enum": [
+        "financial_table",
+        "annual_report_summary",
+        "announcement_excerpt",
+        "management_note",
+        "sell_side_summary",
+        "news_summary",
+        "industry_material",
+        "user_note",
+        "institution_doctrine",
+        "historical_memo",
+        "failed_case",
+        "memo_template",
+        "other"
+      ]
+    },
+    "file_name": {
+      "type": ["string", "null"]
+    },
+    "url": {
+      "type": ["string", "null"]
+    },
+    "provided_by_user": {
+      "type": "boolean"
+    },
+    "usage_rights_confirmed": {
+      "type": ["boolean", "null"],
+      "description": "Whether the user has confirmed they are allowed to use the material."
+    },
+    "period_covered": {
+      "type": ["string", "null"]
+    },
+    "reliability_note": {
+      "type": ["string", "null"]
+    },
+    "created_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  }
+}

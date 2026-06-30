@@ -1,0 +1,42 @@
+{
+  "workflow_name": "research_coach_review_mode",
+  "version": "0.1.0",
+  "description": "Independent mode for reviewing a user-written research memo.",
+  "nodes": [
+    {
+      "id": "firm_doctrine_case_retrieval",
+      "agent": "Firm Doctrine & Case Retrieval Agent",
+      "required_modes": ["to_b"],
+      "optional_modes": ["to_c"],
+      "depends_on": [],
+      "outputs": ["doctrine_context", "memo_template_requirements", "rating_rules"]
+    },
+    {
+      "id": "material_organizer",
+      "agent": "Material Organizer Agent",
+      "required_modes": ["to_c", "to_b"],
+      "depends_on": [],
+      "outputs": ["source_documents", "coverage_map", "missing_materials"]
+    },
+    {
+      "id": "memo_review",
+      "agent": "Research Coach Review Mode",
+      "required_modes": ["to_c", "to_b"],
+      "depends_on": ["firm_doctrine_case_retrieval", "material_organizer"],
+      "outputs": [
+        "missing_evidence_critique",
+        "sell_side_repetition_critique",
+        "value_trap_omission_critique",
+        "compliance_risk_critique",
+        "rewrite_suggestions",
+        "training_feedback_scorecard"
+      ]
+    }
+  ],
+  "hard_rules": [
+    "review mode critiques user reasoning; it does not produce public investment advice",
+    "unsupported claims in the user's memo must be identified",
+    "sell-side repetition must be flagged when detected",
+    "missing value trap checks must be flagged"
+  ]
+}

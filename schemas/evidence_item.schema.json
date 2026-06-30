@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evidence_item.schema.json",
+  "title": "EvidenceItem",
+  "type": "object",
+  "required": [
+    "evidence_id",
+    "category",
+    "statement",
+    "source_refs",
+    "confidence",
+    "verification_status"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "evidence_id": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "fact",
+        "financial_fact",
+        "management_opinion",
+        "sell_side_opinion",
+        "news_or_market_opinion",
+        "user_opinion",
+        "assumption",
+        "ai_reasoning",
+        "risk",
+        "verification_question"
+      ]
+    },
+    "statement": {
+      "type": "string"
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source_id"],
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": ["string", "null"]
+          },
+          "page": {
+            "type": ["string", "null"]
+          },
+          "paragraph_id": {
+            "type": ["string", "null"]
+          },
+          "row_id": {
+            "type": ["string", "null"]
+          },
+          "url": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "period": {
+      "type": ["string", "null"]
+    },
+    "metric_name": {
+      "type": ["string", "null"]
+    },
+    "metric_value": {
+      "type": ["number", "string", "null"]
+    },
+    "unit": {
+      "type": ["string", "null"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "verification_status": {
+      "type": "string",
+      "enum": ["verified", "partially_supported", "unsupported", "to_be_verified"]
+    },
+    "notes": {
+      "type": ["string", "null"]
+    }
+  }
+}

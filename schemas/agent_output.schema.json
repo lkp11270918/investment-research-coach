@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_output.schema.json",
+  "title": "AgentOutput",
+  "type": "object",
+  "required": [
+    "agent_name",
+    "status",
+    "summary",
+    "findings",
+    "evidence_ids",
+    "missing_materials",
+    "confidence",
+    "warnings"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "agent_name": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pass", "partial", "fail"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "detail", "classification"],
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "fact_based",
+              "opinion_based",
+              "assumption_based",
+              "ai_reasoning",
+              "risk",
+              "missing_data",
+              "compliance"
+            ]
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          }
+        }
+      }
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_materials": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
