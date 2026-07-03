@@ -8,6 +8,7 @@ from .agents import run_business_model_moat as run_stub_business_model_moat
 from .agents import run_compliance_gate as run_stub_compliance_gate
 from .agents import run_management_view_comparison as run_stub_management_view_comparison
 from .agents import run_material_organizer as run_stub_material_organizer
+from .agents import run_research_coach_review as run_stub_research_coach_review
 from .agents import run_research_memo_generator as run_stub_research_memo_generator
 from .agents import run_value_trap_contradiction as run_stub_value_trap_contradiction
 from .llm_client import LLMError, OpenAIClient
@@ -258,6 +259,50 @@ VALUE_TRAP_PROMPT = (
       "title": "string",
       "detail": "string",
       "classification": "risk | missing_data | fact_based | opinion_based | assumption_based | ai_reasoning",
+      "evidence_ids": ["EV-..."],
+      "confidence": "high | medium | low"
+    }
+  ],
+  "missing_materials": ["string"],
+  "warnings": ["string"],
+  "confidence": "high | medium | low",
+  "status": "pass | partial | fail"
+}
+"""
+)
+
+
+RESEARCH_COACH_REVIEW_PROMPT = (
+    GLOBAL_AGENT_RULES
+    + """
+
+任务：你是 Research Coach Review Mode，一个买方价值投资研究训练批改 Agent。你不是重写用户 Memo，也不是给投资建议；你的任务是严厉批改用户 Memo 的研究质量。
+
+你必须覆盖 PRD 中的四类核心批改：
+1. 卖方复读识别：检查用户是否把卖方观点、市场观点、管理层说法直接复述为自己的买方结论；是否缺少独立反证、关键假设拆解和证据校验。
+2. 证据缺口批改：检查每个关键判断是否有用户资料或 evidence 支持；指出缺少哪些财务表、公告、年报、现金流、分红、负债、行业、管理层或反方资料。
+3. 价值陷阱遗漏：检查是否遗漏高股息不可持续、低估值来自主业衰退、利润现金流背离、自由现金流不足、一次性收益、杠杆 ROE、行业下行、应收/存货恶化、管理层叙事与财务现实冲突等。
+4. 不符合机构理念：检查是否违背价值投资研究训练理念，例如低估值=安全边际、高股息=安全、观点先行、缺少能力圈、缺少安全边际验证、缺少反证问题、资料不足却高置信。
+
+特别要求：
+- 必须逐条指出问题、原因和修改方向。
+- 如果 evidence_items 为空或不足，必须明确说“当前资料无法验证用户 Memo 的关键结论”，并降低 confidence。
+- 如果用户 Memo 出现买入、卖出、增持、减持、目标价、必涨、稳赚等表达，必须标为合规/边界问题。
+- 可以引用 evidence_ids，但不要引用不存在的 evidence_id。
+- 不得输出任何交易建议、收益承诺或确定性结论。
+- 输出要能直接喂给前端展示为批改 findings。
+
+classification 只能使用：
+sell_side_repetition, evidence_gap, value_trap_omission, doctrine_mismatch, compliance, missing_data, unsupported_claim, rewrite_guidance, strength
+
+返回 JSON 格式：
+{
+  "summary": "string",
+  "findings": [
+    {
+      "title": "string",
+      "detail": "string",
+      "classification": "sell_side_repetition | evidence_gap | value_trap_omission | doctrine_mismatch | compliance | missing_data | unsupported_claim | rewrite_guidance | strength",
       "evidence_ids": ["EV-..."],
       "confidence": "high | medium | low"
     }
@@ -897,6 +942,130 @@ def run_value_trap_contradiction_llm(state: WorkflowState, client: OpenAIClient 
         agent_name="Value Trap & Contradiction Agent",
         status=status,
         summary=str(result.get("summary") or "已完成价值陷阱与反证风险检查。"),
+        findings=findings,
+        evidence_ids=evidence_ids,
+        missing_materials=missing_materials,
+        confidence=confidence,
+        warnings=warnings,
+    )
+
+
+def run_research_coach_review_llm(
+    memo_text: str,
+    state: WorkflowState,
+    client: OpenAIClient | None = None,
+) -> AgentOutput:
+    client = client or OpenAIClient()
+    rule_review = run_stub_research_coach_review(memo_text, state)
+    if not client.available:
+        return rule_review
+
+    try:
+        result = client.generate_json(
+            system_prompt=RESEARCH_COACH_REVIEW_PROMPT,
+            user_payload={
+                "company_profile": state.company_profile.model_dump(mode="json"),
+                "user_mode": state.company_profile.user_mode.value,
+                "user_memo_text": memo_text[:12000],
+                "source_documents": [
+                    {
+                        "source_id": doc.source_id,
+                        "title": doc.title,
+                        "source_type": doc.source_type.value,
+                        "period_covered": doc.period_covered,
+                        "reliability_note": doc.reliability_note,
+                        "content_excerpt": doc.content[:2500],
+                    }
+                    for doc in state.source_documents
+                ],
+                "evidence_items": [
+                    {
+                        "evidence_id": item.evidence_id,
+                        "category": item.category.value,
+                        "statement": item.statement,
+                        "period": item.period,
+                        "metric_name": item.metric_name,
+                        "metric_value": item.metric_value,
+                        "unit": item.unit,
+                        "confidence": item.confidence.value,
+                        "verification_status": item.verification_status.value,
+                        "source_refs": [ref.model_dump(mode="json") for ref in item.source_refs],
+                    }
+                    for item in state.evidence_items
+                ],
+                "prior_agent_outputs": {
+                    key: value.model_dump(mode="json")
+                    for key, value in state.agent_outputs.items()
+                    if key in {"firm_doctrine_case_retrieval", "material_organizer", "evidence_extractor"}
+                },
+                "mandatory_review_dimensions": [
+                    "卖方复读识别",
+                    "证据缺口批改",
+                    "价值陷阱遗漏",
+                    "不符合机构理念",
+                ],
+            },
+        )
+    except LLMError as exc:
+        rule_review.warnings.append(f"LLM Research Coach Review 调用失败，已回退规则骨架：{exc}")
+        return rule_review
+
+    valid_evidence_ids = {item.evidence_id for item in state.evidence_items}
+    findings: list[AgentFinding] = []
+    for raw in result.get("findings", []):
+        if not isinstance(raw, dict):
+            continue
+        finding = _finding(raw)
+        finding.evidence_ids = [item for item in finding.evidence_ids if item in valid_evidence_ids]
+        findings.append(finding)
+
+    rule_titles = {finding.title for finding in findings}
+    for finding in rule_review.findings:
+        if finding.title not in rule_titles:
+            findings.append(finding)
+
+    observed_classes = {finding.classification for finding in findings}
+    dimension_defaults = {
+        "sell_side_repetition": "检查是否把卖方观点或市场共识直接复述为买方结论。",
+        "evidence_gap": "检查关键判断是否绑定证据；缺少证据时应降级表达。",
+        "value_trap_omission": "检查是否遗漏价值陷阱与反证变量。",
+        "doctrine_mismatch": "检查是否违背价值投资研究训练理念。",
+    }
+    for classification, detail in dimension_defaults.items():
+        if classification not in observed_classes:
+            findings.append(
+                AgentFinding(
+                    title=f"{classification} 维度需继续自查",
+                    detail=detail,
+                    classification=classification,
+                    confidence=Confidence.LOW,
+                )
+            )
+
+    missing_materials = [str(item) for item in result.get("missing_materials", [])]
+    if not state.evidence_items and "可验证证据材料" not in missing_materials:
+        missing_materials.append("可验证证据材料")
+
+    warnings = [
+        *rule_review.warnings,
+        *[str(item) for item in result.get("warnings", [])],
+    ]
+    if not any("不构成投资建议" in item for item in warnings):
+        warnings.append("批改结果仅用于研究训练，不构成投资建议。")
+
+    confidence = _confidence(result.get("confidence"))
+    status = _agent_status(result.get("status"))
+    if findings and status == AgentStatus.PASS:
+        status = AgentStatus.PARTIAL
+    if not state.evidence_items:
+        confidence = Confidence.LOW
+        status = AgentStatus.PARTIAL
+
+    evidence_ids = sorted({evidence_id for finding in findings for evidence_id in finding.evidence_ids})
+    return AgentOutput(
+        agent_name="Research Coach Review Mode",
+        status=status,
+        summary=str(result.get("summary") or "已完成 LLM 深度批改，覆盖卖方复读、证据缺口、价值陷阱和机构理念一致性。"),
         findings=findings,
         evidence_ids=evidence_ids,
         missing_materials=missing_materials,

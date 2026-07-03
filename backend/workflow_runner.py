@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .agents import (
     run_firm_doctrine_case_retrieval,
-    run_research_coach_review,
 )
 from .llm_agents import (
     run_business_model_moat_llm,
@@ -13,6 +12,7 @@ from .llm_agents import (
     run_financial_quality_dividend_llm,
     run_management_view_comparison_llm,
     run_material_organizer_llm,
+    run_research_coach_review_llm,
     run_research_memo_generator_llm,
     run_value_trap_contradiction_llm,
 )
@@ -111,7 +111,10 @@ def run_review_workflow(request: ReviewRequest) -> WorkflowState:
     organizer = run_material_organizer_llm(state)
     state.agent_outputs["material_organizer"] = organizer
 
-    review = run_research_coach_review(request.memo_text, state)
+    extractor = run_evidence_extractor_llm(state)
+    state.agent_outputs["evidence_extractor"] = extractor
+
+    review = run_research_coach_review_llm(request.memo_text, state)
     state.agent_outputs["research_coach_review"] = review
 
     save_run(state, state.run_id)
