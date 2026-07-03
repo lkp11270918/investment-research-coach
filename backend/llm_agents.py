@@ -11,6 +11,7 @@ from .agents import run_material_organizer as run_stub_material_organizer
 from .agents import run_research_coach_review as run_stub_research_coach_review
 from .agents import run_research_memo_generator as run_stub_research_memo_generator
 from .agents import run_value_trap_contradiction as run_stub_value_trap_contradiction
+from .financial_parser import expected_financial_metric_names, extract_structured_financial_evidence
 from .llm_client import LLMError, OpenAIClient
 from .models import (
     AgentFinding,
@@ -537,6 +538,7 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
 
 def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None = None) -> AgentOutput:
     client = client or OpenAIClient()
+    structured_financial_evidence = extract_structured_financial_evidence(state.source_documents)
     if not client.available:
         return run_stub_evidence_extractor(state)
 
@@ -564,7 +566,11 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
         return output
 
     source_by_id = {doc.source_id: doc for doc in state.source_documents}
-    evidence: list[EvidenceItem] = []
+    evidence: list[EvidenceItem] = [*structured_financial_evidence]
+    structured_keys = {
+        (item.source_refs[0].source_id if item.source_refs else None, item.metric_name, str(item.metric_value), item.period)
+        for item in structured_financial_evidence
+    }
     for raw in result.get("evidence", []):
         if not isinstance(raw, dict):
             continue
@@ -583,30 +589,38 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
         status = _verification_status(raw.get("verification_status"))
         if category in {EvidenceCategory.FACT, EvidenceCategory.FINANCIAL_FACT} and not raw.get("excerpt"):
             status = VerificationStatus.TO_BE_VERIFIED
-        evidence.append(
-            EvidenceItem(
-                category=category,
-                statement=str(raw.get("statement") or ""),
-                source_refs=refs,
-                period=raw.get("period"),
-                metric_name=raw.get("metric_name"),
-                metric_value=raw.get("metric_value"),
-                unit=raw.get("unit"),
-                confidence=_confidence(raw.get("confidence")),
-                verification_status=status,
-                notes=raw.get("notes"),
-            )
+        item = EvidenceItem(
+            category=category,
+            statement=str(raw.get("statement") or ""),
+            source_refs=refs,
+            period=raw.get("period"),
+            metric_name=raw.get("metric_name"),
+            metric_value=raw.get("metric_value"),
+            unit=raw.get("unit"),
+            confidence=_confidence(raw.get("confidence")),
+            verification_status=status,
+            notes=raw.get("notes"),
         )
+        key = (source_id, item.metric_name, str(item.metric_value), item.period)
+        if item.category == EvidenceCategory.FINANCIAL_FACT and key in structured_keys:
+            continue
+        evidence.append(item)
 
     state.evidence_items = evidence
     findings = [_finding(item) for item in result.get("findings", []) if isinstance(item, dict)]
+    extracted_metric_names = {item.metric_name for item in evidence if item.category == EvidenceCategory.FINANCIAL_FACT and item.metric_name}
+    missing_materials = [str(item) for item in result.get("missing_materials", [])]
+    for metric_name in expected_financial_metric_names():
+        if metric_name not in extracted_metric_names:
+            missing_materials.append(f"财务字段：{metric_name}")
     return AgentOutput(
         agent_name="Evidence Extractor Agent",
         status=AgentStatus.PASS if evidence else AgentStatus.FAIL,
-        summary=str(result.get("summary") or f"抽取 {len(evidence)} 条证据项。"),
+        summary=str(result.get("summary") or f"抽取 {len(evidence)} 条证据项。")
+        + (f" 结构化财务字段 {len(extracted_metric_names)} 类。" if structured_financial_evidence else ""),
         findings=findings,
         evidence_ids=[item.evidence_id for item in evidence],
-        missing_materials=[str(item) for item in result.get("missing_materials", [])],
+        missing_materials=dedupe(missing_materials),
         confidence=_confidence(result.get("confidence")),
         warnings=[str(item) for item in result.get("warnings", [])],
     )

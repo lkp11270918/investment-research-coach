@@ -139,9 +139,10 @@ def _xlsx_sheet_rows(xml: bytes, shared_strings: list[str]) -> list[str]:
     ns = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     rows: list[str] = []
     for row in root.findall(".//x:row", ns):
-        cells: list[str] = []
+        values_by_col: dict[int, str] = {}
         for cell in row.findall("x:c", ns):
             cell_type = cell.attrib.get("t")
+            col_index = _xlsx_column_index(cell.attrib.get("r", ""))
             value_node = cell.find("x:v", ns)
             inline_node = cell.find("x:is/x:t", ns)
             value = ""
@@ -156,10 +157,23 @@ def _xlsx_sheet_rows(xml: bytes, shared_strings: list[str]) -> list[str]:
                         value = raw_value
                 else:
                     value = raw_value
-            cells.append(value.strip())
+            values_by_col[col_index] = value.strip()
+        if not values_by_col:
+            continue
+        cells = [values_by_col.get(index, "") for index in range(max(values_by_col) + 1)]
         if any(cells):
             rows.append(" | ".join(cells))
     return rows
+
+
+def _xlsx_column_index(cell_ref: str) -> int:
+    letters = "".join(ch for ch in cell_ref if ch.isalpha()).upper()
+    if not letters:
+        return 0
+    index = 0
+    for char in letters:
+        index = index * 26 + (ord(char) - ord("A") + 1)
+    return index - 1
 
 
 def _parse_pdf(data: bytes) -> str:

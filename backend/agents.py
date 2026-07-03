@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from .financial_parser import expected_financial_metric_names, extract_structured_financial_evidence
 from .models import (
     AgentFinding,
     AgentOutput,
@@ -113,7 +114,7 @@ def run_material_organizer(state: WorkflowState) -> AgentOutput:
 
 
 def run_evidence_extractor(state: WorkflowState) -> AgentOutput:
-    evidence: list[EvidenceItem] = []
+    evidence: list[EvidenceItem] = extract_structured_financial_evidence(state.source_documents)
     for doc in state.source_documents:
         content = doc.content.strip()
         if not content:
@@ -132,16 +133,17 @@ def run_evidence_extractor(state: WorkflowState) -> AgentOutput:
         else:
             category = EvidenceCategory.FACT
 
-        evidence.append(
-            EvidenceItem(
-                category=category,
-                statement=f"来自《{doc.title}》的资料片段：{_first_excerpt(content, 120)}",
-                source_refs=[ref],
-                confidence=Confidence.MEDIUM,
-                verification_status=VerificationStatus.PARTIALLY_SUPPORTED,
-                notes="当前为骨架抽取结果；后续 LLM/解析器应抽取更细粒度事实和财务字段。",
+        if category != EvidenceCategory.FINANCIAL_FACT or not any(item.source_refs and item.source_refs[0].source_id == doc.source_id for item in evidence):
+            evidence.append(
+                EvidenceItem(
+                    category=category,
+                    statement=f"来自《{doc.title}》的资料片段：{_first_excerpt(content, 120)}",
+                    source_refs=[ref],
+                    confidence=Confidence.MEDIUM,
+                    verification_status=VerificationStatus.PARTIALLY_SUPPORTED,
+                    notes="当前为骨架抽取结果；后续 LLM 可补充更细粒度事实和观点。",
+                )
             )
-        )
 
     state.evidence_items = evidence
     missing = []
@@ -151,11 +153,15 @@ def run_evidence_extractor(state: WorkflowState) -> AgentOutput:
         missing.append("管理层观点")
     if not any(item.category == EvidenceCategory.SELL_SIDE_OPINION for item in evidence):
         missing.append("卖方观点")
+    extracted_metric_names = {item.metric_name for item in evidence if item.category == EvidenceCategory.FINANCIAL_FACT}
+    for metric_name in expected_financial_metric_names():
+        if metric_name not in extracted_metric_names:
+            missing.append(f"财务字段：{metric_name}")
 
     return AgentOutput(
         agent_name="Evidence Extractor Agent",
         status=AgentStatus.PASS if evidence else AgentStatus.FAIL,
-        summary=f"抽取 {len(evidence)} 条初始证据项。",
+        summary=f"抽取 {len(evidence)} 条初始证据项，其中结构化财务字段 {len(extracted_metric_names)} 类。",
         findings=[
             AgentFinding(
                 title="事实/观点/推理分区",
@@ -168,7 +174,7 @@ def run_evidence_extractor(state: WorkflowState) -> AgentOutput:
         evidence_ids=[item.evidence_id for item in evidence],
         missing_materials=missing,
         confidence=Confidence.LOW,
-        warnings=["当前抽取器为规则型骨架，尚未完成逐项财务字段解析。"],
+        warnings=[] if extracted_metric_names else ["未从财务表中解析出结构化财务字段。"],
     )
 
 
