@@ -422,6 +422,17 @@ def _verification_status(value: Any) -> VerificationStatus:
         return VerificationStatus.TO_BE_VERIFIED
 
 
+def _dedupe_strings(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
 def _finding(raw: dict[str, Any]) -> AgentFinding:
     return AgentFinding(
         title=str(raw.get("title") or "未命名发现"),
@@ -620,7 +631,7 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
         + (f" 结构化财务字段 {len(extracted_metric_names)} 类。" if structured_financial_evidence else ""),
         findings=findings,
         evidence_ids=[item.evidence_id for item in evidence],
-        missing_materials=dedupe(missing_materials),
+        missing_materials=_dedupe_strings(missing_materials),
         confidence=_confidence(result.get("confidence")),
         warnings=[str(item) for item in result.get("warnings", [])],
     )
