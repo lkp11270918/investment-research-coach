@@ -59,6 +59,11 @@ export default function Page() {
     clearStoredToken()
     setCurrentUser(null)
     setIsLoggedIn(false)
+    setAuthModal(null)
+    setView('landing')
+    setActiveTab('input')
+    setAnalysisData(null)
+    setMemo(null)
   }
 
   const handleStartAnalysis = (data: {
