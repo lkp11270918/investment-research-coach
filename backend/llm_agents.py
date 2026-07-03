@@ -958,6 +958,9 @@ def run_research_coach_review_llm(
     client = client or OpenAIClient()
     rule_review = run_stub_research_coach_review(memo_text, state)
     if not client.available:
+        rule_review.warnings.append(
+            "LLM Research Coach Review 未启用或缺少 OPENAI_API_KEY，已回退规则骨架。"
+        )
         return rule_review
 
     try:
