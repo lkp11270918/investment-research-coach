@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .financial_parser import expected_financial_metric_names, extract_structured_financial_evidence
+from .value_investing_doctrine import doctrine_findings
 from .models import (
     AgentFinding,
     AgentOutput,
@@ -41,11 +42,13 @@ def _first_excerpt(content: str, limit: int = 180) -> str:
 
 def run_firm_doctrine_case_retrieval(state: WorkflowState) -> AgentOutput:
     if state.company_profile.user_mode == UserMode.TO_C:
-        summary = "To C 模式使用默认价值投资准则，不启用机构专属评级。"
-        warnings = ["未接入机构案例库，后续分析仅使用默认 doctrine。"]
+        summary = "To C 模式使用通用价值投资 Doctrine，不启用机构专属评级。"
+        warnings = ["当前使用通用价值投资准则；To B 阶段可接入机构成功报告、失败案例、细分理念和内部评级。"]
+        missing_materials = []
     else:
-        summary = "To B 模式预留机构理念与案例召回接口；当前骨架尚未接入企业知识库。"
-        warnings = ["机构理念、历史优秀案例、失败案例和内部评级规则尚未导入。"]
+        summary = "To B 模式使用通用价值投资 Doctrine 作为底座，并预留机构理念与案例召回接口。"
+        warnings = ["机构理念、历史优秀案例、失败案例和内部评级规则尚未导入；当前先使用通用价值投资底座。"]
+        missing_materials = ["机构投资理念文档", "历史优秀 Memo", "失败案例库", "内部评级规则"]
 
     return AgentOutput(
         agent_name="Firm Doctrine & Case Retrieval Agent",
@@ -53,13 +56,14 @@ def run_firm_doctrine_case_retrieval(state: WorkflowState) -> AgentOutput:
         summary=summary,
         findings=[
             AgentFinding(
-                title="默认价值投资准则已启用",
-                detail="后续模块必须检查现金流质量、分红可持续性、资产负债表安全、商业模式稳定性、管理层资本配置和价值陷阱。",
+                title=title,
+                detail=detail,
                 classification="ai_reasoning",
                 confidence=Confidence.MEDIUM,
             )
+            for title, detail in doctrine_findings()
         ],
-        missing_materials=[] if state.company_profile.user_mode == UserMode.TO_C else ["机构投资理念文档", "历史优秀 Memo", "失败案例库"],
+        missing_materials=missing_materials,
         confidence=Confidence.MEDIUM if state.company_profile.user_mode == UserMode.TO_C else Confidence.LOW,
         warnings=warnings,
     )

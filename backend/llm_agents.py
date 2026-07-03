@@ -13,6 +13,7 @@ from .agents import run_research_memo_generator as run_stub_research_memo_genera
 from .agents import run_value_trap_contradiction as run_stub_value_trap_contradiction
 from .financial_parser import expected_financial_metric_names, extract_structured_financial_evidence
 from .llm_client import LLMError, OpenAIClient
+from .value_investing_doctrine import doctrine_text
 from .models import (
     AgentFinding,
     AgentOutput,
@@ -47,7 +48,7 @@ GLOBAL_AGENT_RULES = """
 - 不得把低估值直接等同于安全边际。
 - 不得输出收益承诺或确定性买卖建议。
 - 只返回 JSON，不要 markdown。
-""".strip()
+""".strip() + "\n\n" + doctrine_text()
 
 
 MATERIAL_ORGANIZER_PROMPT = (
