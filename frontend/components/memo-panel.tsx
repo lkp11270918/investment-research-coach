@@ -3,13 +3,14 @@
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
-import type { BackendMemo } from '@/lib/api'
+import type { BackendEvidenceItem, BackendMemo } from '@/lib/api'
 
 interface MemoPanelProps {
   companyName?: string
   stockCode?: string
   industry?: string
   memo?: BackendMemo | null
+  evidenceItems?: BackendEvidenceItem[]
 }
 
 type EvidenceTag = 'fact' | 'opinion' | 'assumption' | 'ai'
@@ -34,6 +35,131 @@ function EvidenceLine({ item }: { item: EvidenceItem }) {
       <span className="text-sm text-foreground leading-relaxed flex-1">{item.text}</span>
       {item.source && (
         <span className="text-[10px] text-muted-foreground font-mono shrink-0 mt-0.5">← {item.source}</span>
+      )}
+    </div>
+  )
+}
+
+const backendCategoryLabel: Record<string, string> = {
+  fact: '事实',
+  financial_fact: '财务事实',
+  management_opinion: '管理层观点',
+  sell_side_opinion: '卖方观点',
+  news_or_market_opinion: '新闻/市场观点',
+  user_opinion: '用户观点',
+  assumption: '假设',
+  ai_reasoning: 'AI 推理',
+  risk: '风险',
+  verification_question: '待验证问题',
+}
+
+const backendCategoryTone: Record<string, string> = {
+  fact: 'bg-success/15 text-success border-success/30',
+  financial_fact: 'bg-success/15 text-success border-success/30',
+  management_opinion: 'bg-primary/15 text-primary border-primary/30',
+  sell_side_opinion: 'bg-warning/15 text-warning border-warning/30',
+  news_or_market_opinion: 'bg-primary/15 text-primary border-primary/30',
+  user_opinion: 'bg-muted text-muted-foreground border-border',
+  assumption: 'bg-warning/15 text-warning border-warning/30',
+  ai_reasoning: 'bg-muted text-muted-foreground border-border',
+  risk: 'bg-destructive/15 text-destructive border-destructive/30',
+  verification_question: 'bg-warning/15 text-warning border-warning/30',
+}
+
+function confidenceText(confidence: string) {
+  if (confidence === 'high') return '高'
+  if (confidence === 'medium') return '中'
+  return '低'
+}
+
+function verificationText(status: string) {
+  if (status === 'verified') return '已验证'
+  if (status === 'partially_supported') return '部分支持'
+  if (status === 'unsupported') return '未支持'
+  return '待验证'
+}
+
+function EvidenceTraceCard({ evidence }: { evidence: BackendEvidenceItem }) {
+  const source = evidence.source_refs?.[0]
+  const location = [
+    source?.page ? `页 ${source.page}` : null,
+    source?.paragraph_id ? `段 ${source.paragraph_id}` : null,
+    source?.row_id ? `行 ${source.row_id}` : null,
+  ].filter(Boolean).join(' · ')
+  return (
+    <div className="rounded-md border border-border bg-secondary/30 p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] text-muted-foreground">{evidence.evidence_id}</span>
+        <Badge className={`h-4 text-[9px] ${backendCategoryTone[evidence.category] || 'bg-muted text-muted-foreground border-border'}`}>
+          {backendCategoryLabel[evidence.category] || evidence.category}
+        </Badge>
+        <span className="text-[10px] text-muted-foreground">置信度：{confidenceText(evidence.confidence)}</span>
+        <span className="text-[10px] text-muted-foreground">状态：{verificationText(evidence.verification_status)}</span>
+      </div>
+      <div className="text-xs leading-relaxed text-foreground">{evidence.statement}</div>
+      {(evidence.metric_name || evidence.period || evidence.metric_value !== undefined && evidence.metric_value !== null) && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {evidence.metric_name && <span className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground">指标：{evidence.metric_name}</span>}
+          {evidence.period && <span className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground">期间：{evidence.period}</span>}
+          {evidence.metric_value !== undefined && evidence.metric_value !== null && (
+            <span className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              数值：{evidence.metric_value}{evidence.unit || ''}
+            </span>
+          )}
+        </div>
+      )}
+      {source && (
+        <div className="mt-2 rounded border border-border/60 bg-card/60 p-2">
+          <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+            <span>来源：{source.source_id}</span>
+            {location && <span>{location}</span>}
+            {source.url && <span className="truncate">URL：{source.url}</span>}
+          </div>
+          {source.excerpt && (
+            <div className="line-clamp-3 text-[11px] leading-relaxed text-muted-foreground">
+              “{source.excerpt}”
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EvidenceTraceList({
+  evidenceIds,
+  evidenceById,
+}: {
+  evidenceIds: string[]
+  evidenceById: Map<string, BackendEvidenceItem>
+}) {
+  if (evidenceIds.length === 0) return null
+  const items = evidenceIds.map(id => evidenceById.get(id)).filter(Boolean) as BackendEvidenceItem[]
+  return (
+    <div className="mt-4 rounded-lg border border-border bg-card/50 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-xs font-medium text-foreground">可追溯证据</div>
+        <div className="text-[10px] text-muted-foreground">
+          {items.length}/{evidenceIds.length} 条已匹配
+        </div>
+      </div>
+      {items.length > 0 ? (
+        <div className="space-y-2">
+          {items.map(item => <EvidenceTraceCard key={item.evidence_id} evidence={item} />)}
+        </div>
+      ) : (
+        <div className="text-xs text-muted-foreground">
+          后端返回了证据 ID，但当前响应没有包含对应证据详情。
+        </div>
+      )}
+      {items.length < evidenceIds.length && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {evidenceIds.filter(id => !evidenceById.has(id)).map(id => (
+            <span key={id} className="rounded border border-border bg-secondary/50 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+              未匹配：{id}
+            </span>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -376,8 +502,9 @@ const memoSections = [
   },
 ]
 
-export function MemoPanel({ companyName = '—', stockCode = '—', industry = '—', memo }: MemoPanelProps) {
+export function MemoPanel({ companyName = '—', stockCode = '—', industry = '—', memo, evidenceItems = [] }: MemoPanelProps) {
   const [activeSection, setActiveSection] = useState<string>('overview')
+  const evidenceById = new Map(evidenceItems.map(item => [item.evidence_id, item]))
 
   const handleDownload = () => {
     const content = memo?.markdown || `# ${companyName}（${stockCode}）价值投资研究 Memo\n\n*本 Memo 由 Value Investing Research Coach 生成，不构成投资建议*\n\n---\n\n此为演示版本，完整内容包含 18 个章节。`
@@ -407,8 +534,8 @@ export function MemoPanel({ companyName = '—', stockCode = '—', industry = '
                   <div className="text-[11px] font-semibold text-primary">{memo.confidence}</div>
                 </div>
                 <div className="rounded bg-secondary/50 border border-border/50 px-2 py-1.5">
-                  <div className="text-[10px] text-muted-foreground">来源数</div>
-                  <div className="text-[11px] font-semibold text-foreground">{memo.source_ids.length}</div>
+                  <div className="text-[10px] text-muted-foreground">证据数</div>
+                  <div className="text-[11px] font-semibold text-foreground">{evidenceItems.length || memo.source_ids.length}</div>
                 </div>
               </div>
 
@@ -471,15 +598,7 @@ export function MemoPanel({ companyName = '—', stockCode = '—', industry = '
                   </AccordionTrigger>
                   <AccordionContent className="px-4 pb-4 pt-1">
                     <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{section.body}</div>
-                    {section.evidence_ids.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {section.evidence_ids.map(id => (
-                          <span key={id} className="rounded border border-border bg-secondary/50 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                            {id}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <EvidenceTraceList evidenceIds={section.evidence_ids} evidenceById={evidenceById} />
                   </AccordionContent>
                 </AccordionItem>
               ))}

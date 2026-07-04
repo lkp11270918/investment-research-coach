@@ -8,7 +8,7 @@ import { InputPanel } from '@/components/input-panel'
 import { AnalysisPanel, type AnalysisData } from '@/components/analysis-panel'
 import { MemoPanel } from '@/components/memo-panel'
 import { ReviewPanel } from '@/components/review-panel'
-import type { AuthUser, BackendMemo } from '@/lib/api'
+import type { AnalyzeResult, AuthUser, BackendMemo } from '@/lib/api'
 import { clearStoredToken, fetchCurrentUser, getStoredToken } from '@/lib/api'
 
 type AppView = 'landing' | 'app'
@@ -21,6 +21,7 @@ export default function Page() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [activeTab, setActiveTab] = useState('input')
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null)
+  const [analysisResult, setAnalysisResult] = useState<AnalyzeResult | null>(null)
   const [memo, setMemo] = useState<BackendMemo | null>(null)
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export default function Page() {
     setView('landing')
     setActiveTab('input')
     setAnalysisData(null)
+    setAnalysisResult(null)
     setMemo(null)
   }
 
@@ -73,6 +75,7 @@ export default function Page() {
     materials: AnalysisData['materials']
   }) => {
     setMemo(null)
+    setAnalysisResult(null)
     setAnalysisData(data)
     setActiveTab('analysis')
   }
@@ -110,6 +113,7 @@ export default function Page() {
               <AnalysisPanel
                 data={analysisData}
                 onComplete={(result) => {
+                  setAnalysisResult(result)
                   setMemo(result.state.memo || null)
                   setActiveTab('memo')
                 }}
@@ -137,6 +141,7 @@ export default function Page() {
                 stockCode={analysisData?.stockCode}
                 industry={analysisData?.industry}
                 memo={memo}
+                evidenceItems={analysisResult?.state.evidence_items || []}
               />
             )}
 

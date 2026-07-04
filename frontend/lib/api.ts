@@ -43,6 +43,26 @@ export type BackendAgentOutput = {
   warnings: string[]
 }
 
+export type BackendEvidenceItem = {
+  evidence_id: string
+  category: string
+  statement: string
+  metric_name?: string | null
+  metric_value?: string | number | null
+  period?: string | null
+  unit?: string | null
+  confidence: 'high' | 'medium' | 'low'
+  verification_status: string
+  source_refs?: Array<{
+    source_id: string
+    excerpt?: string | null
+    page?: string | null
+    paragraph_id?: string | null
+    row_id?: string | null
+    url?: string | null
+  }>
+}
+
 export type AnalyzeResult = {
   run_id: string
   status: string
@@ -50,23 +70,7 @@ export type AnalyzeResult = {
     memo?: BackendMemo | null
     pre_memo_gate?: unknown
     post_memo_gate?: unknown
-    evidence_items?: Array<{
-      evidence_id: string
-      category: string
-      statement: string
-      metric_name?: string | null
-      metric_value?: string | number | null
-      period?: string | null
-      unit?: string | null
-      confidence: 'high' | 'medium' | 'low'
-      verification_status: string
-      source_refs?: Array<{
-        source_id: string
-        excerpt?: string | null
-        row_id?: string | null
-        url?: string | null
-      }>
-    }>
+    evidence_items?: BackendEvidenceItem[]
     agent_outputs: Record<string, BackendAgentOutput>
   }
 }
