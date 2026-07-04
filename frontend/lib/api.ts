@@ -5,6 +5,7 @@ export type FrontendMaterial = {
   status: 'ready' | 'missing'
   content?: string
   file?: File
+  files?: File[]
 }
 
 export type BackendMemoSection = {
@@ -180,15 +181,18 @@ export async function analyzeCompany(input: {
       source_type: sourceTypeByMaterialId[material.id] || 'other',
       usage_rights_confirmed: true,
     }))
-  const fileMaterials = input.materials.filter(material => material.status === 'ready' && material.file)
+  const fileMaterials = input.materials.flatMap(material => {
+    const files = material.files?.length ? material.files : material.file ? [material.file] : []
+    return files.map(file => ({ materialId: material.id, file }))
+  })
 
   const formData = new FormData()
   formData.append('company_profile', JSON.stringify(companyProfile))
   formData.append('text_materials', JSON.stringify(textMaterials))
   formData.append('options', JSON.stringify({ skip_post_gate: false, enable_parallel: true }))
   for (const material of fileMaterials) {
-    formData.append('material_ids', material.id)
-    formData.append('files', material.file as File)
+    formData.append('material_ids', material.materialId)
+    formData.append('files', material.file)
   }
 
   const response = await fetch(`${API_BASE_URL}/api/analyze-files`, {

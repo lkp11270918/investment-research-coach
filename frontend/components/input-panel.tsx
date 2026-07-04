@@ -11,6 +11,7 @@ interface MaterialItem {
   status: 'ready' | 'missing'
   content?: string
   file?: File
+  files?: File[]
 }
 
 interface InputPanelProps {
@@ -26,7 +27,7 @@ const materialTypes = [
   { id: 'financial', label: '财务数据表', icon: '📊', hint: '年报财务表、Excel 格式', required: true },
   { id: 'annual', label: '年报摘要', icon: '📋', hint: '年报核心内容摘要', required: true },
   { id: 'management', label: '管理层交流纪要', icon: '💬', hint: '业绩会、路演记录', required: false },
-  { id: 'sellside', label: '卖方研报摘要', icon: '📄', hint: '券商研报观点摘要（非全文）', required: false },
+  { id: 'sellside', label: '卖方研报', icon: '📄', hint: '支持同时上传多份券商研报 PDF，用于比较共同点、分歧点和假设差异', required: false },
   { id: 'news', label: '新闻与行业资料', icon: '📰', hint: '相关新闻、行业研究', required: false },
   { id: 'notes', label: '已有研究笔记', icon: '✏️', hint: '用户自己的初步分析', required: false },
 ]
@@ -78,7 +79,7 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
   const [industry, setIndustry] = useState('')
   const [activeType, setActiveType] = useState<string | null>('financial')
   const [materialContents, setMaterialContents] = useState<Record<string, string>>({})
-  const [uploadedFiles, setUploadedFiles] = useState<Record<string, File>>({})
+  const [uploadedFiles, setUploadedFiles] = useState<Record<string, File[]>>({})
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleSampleCompany = (c: typeof sampleCompanies[0]) => {
@@ -97,24 +98,46 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
   }
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file || !activeType) return
-    setUploadedFiles(prev => ({ ...prev, [activeType]: file }))
+    const files = Array.from(event.target.files || [])
+    if (!files.length || !activeType) return
+    setUploadedFiles(prev => ({
+      ...prev,
+      [activeType]: activeType === 'sellside' ? [...(prev[activeType] || []), ...files] : [files[0]],
+    }))
     event.target.value = ''
   }
 
-  const filledCount = materialTypes.filter(m => materialContents[m.id]?.trim() || uploadedFiles[m.id]).length
+  const removeUploadedFile = (id: string, index: number) => {
+    setUploadedFiles(prev => {
+      const remaining = (prev[id] || []).filter((_, fileIndex) => fileIndex !== index)
+      const next = { ...prev }
+      if (remaining.length) {
+        next[id] = remaining
+      } else {
+        delete next[id]
+      }
+      return next
+    })
+  }
+
+  const materialReady = (id: string) => Boolean(materialContents[id]?.trim() || uploadedFiles[id]?.length)
+  const uploadedFileCount = (id: string) => uploadedFiles[id]?.length || 0
+  const uploadedFileSize = (id: string) => (uploadedFiles[id] || []).reduce((sum, file) => sum + file.size, 0)
+  const filledCount = materialTypes.filter(m => materialReady(m.id)).length
 
   const handleStart = () => {
     if (!stockCode || !companyName) return
     const materials: MaterialItem[] = materialTypes.map(m => ({
       id: m.id,
       type: m.label,
-      name: uploadedFiles[m.id]?.name || (materialContents[m.id] ? `${m.label}（粘贴文本）` : ''),
-      size: uploadedFiles[m.id] ? `${Math.round(uploadedFiles[m.id].size / 1024)} KB` : undefined,
-      status: materialContents[m.id]?.trim() || uploadedFiles[m.id] ? 'ready' : 'missing',
+      name: uploadedFileCount(m.id) > 1
+        ? `${m.label}（${uploadedFileCount(m.id)} 份文件）`
+        : uploadedFiles[m.id]?.[0]?.name || (materialContents[m.id] ? `${m.label}（粘贴文本）` : ''),
+      size: uploadedFileCount(m.id) ? `${Math.round(uploadedFileSize(m.id) / 1024)} KB` : undefined,
+      status: materialReady(m.id) ? 'ready' : 'missing',
       content: materialContents[m.id] || '',
-      file: uploadedFiles[m.id],
+      file: uploadedFiles[m.id]?.[0],
+      files: uploadedFiles[m.id] || [],
     }))
     onStartAnalysis({ stockCode, companyName, industry, materials })
   }
@@ -247,6 +270,7 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
             ref={fileRef}
             type="file"
             accept=".txt,.md,.csv,.docx,.xlsx,.pdf"
+            multiple={activeType === 'sellside'}
             className="hidden"
             onChange={handleFileChange}
           />
@@ -260,17 +284,18 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all border ${
                   activeType === m.id
                     ? 'border-primary/50 bg-primary/10 text-primary'
-                    : materialContents[m.id]?.trim()
+                    : materialReady(m.id)
                     ? 'border-success/30 bg-success/5 text-success'
                     : 'border-border bg-secondary/50 text-muted-foreground hover:text-foreground hover:border-border'
                 }`}
               >
-                {materialContents[m.id]?.trim() && activeType !== m.id && (
+                {materialReady(m.id) && activeType !== m.id && (
                   <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 12 12">
                     <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 )}
                 {m.label}
+                {uploadedFileCount(m.id) > 1 && <span className="text-[10px]">×{uploadedFileCount(m.id)}</span>}
                 {m.required && <span className="text-destructive">*</span>}
               </button>
             ))}
@@ -299,7 +324,7 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
                       onClick={() => handleUploadClick(activeType)}
                       className="text-xs text-primary hover:underline"
                     >
-                      上传文件
+                      {activeType === 'sellside' ? '上传多份研报' : '上传文件'}
                     </button>
                     <button
                       onClick={() => {
@@ -323,16 +348,43 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
                     placeholder={`粘贴 ${mt.label} 内容，或简要描述相关信息…\n\n支持：摘要文字 / 财务数据片段 / 管理层引言 / 新闻摘要`}
                     className="min-h-[280px] resize-none border-border bg-secondary/30 text-sm text-foreground placeholder:text-muted-foreground focus:ring-primary font-mono"
                   />
+                  {uploadedFileCount(activeType) > 0 && (
+                    <div className="mt-3 rounded-md border border-border bg-secondary/30 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-medium text-foreground">
+                          已上传文件 {uploadedFileCount(activeType)} 份
+                        </span>
+                        {activeType === 'sellside' && (
+                          <span className="text-[10px] text-muted-foreground">将作为多份卖方研报输入进行横向比较</span>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {(uploadedFiles[activeType] || []).map((file, index) => (
+                          <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded border border-border/60 bg-card/50 px-2 py-1.5">
+                            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{file.name}</span>
+                            <span className="text-[10px] text-muted-foreground">{Math.round(file.size / 1024)} KB</span>
+                            <button
+                              type="button"
+                              onClick={() => removeUploadedFile(activeType, index)}
+                              className="text-[10px] text-muted-foreground hover:text-destructive"
+                            >
+                              移除
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
                     <span>{(materialContents[activeType] || '').length} 字</span>
                     <div className="flex items-center gap-3">
                       <span>支持 DOCX / XLSX / PDF / CSV / Markdown / TXT</span>
-                      {uploadedFiles[activeType] && (
+                      {uploadedFileCount(activeType) > 0 && (
                         <span className="text-primary flex items-center gap-1">
-                          已上传：{uploadedFiles[activeType].name}
+                          已上传：{uploadedFileCount(activeType)} 份
                         </span>
                       )}
-                      {(materialContents[activeType]?.trim() || uploadedFiles[activeType]) && (
+                      {materialReady(activeType) && (
                         <span className="text-success flex items-center gap-1">
                           <svg className="h-3 w-3" fill="none" viewBox="0 0 12 12">
                             <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -355,19 +407,20 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
                 <div
                   key={m.id}
                   className={`flex items-center gap-2 rounded-md border px-3 py-2 cursor-pointer transition-all ${
-                    materialContents[m.id]?.trim() || uploadedFiles[m.id]
+                    materialReady(m.id)
                       ? 'border-success/30 bg-success/5'
                       : 'border-border bg-secondary/30'
                   }`}
                   onClick={() => setActiveType(m.id)}
                 >
                   <div className={`h-2 w-2 rounded-full shrink-0 ${
-                    materialContents[m.id]?.trim() || uploadedFiles[m.id] ? 'bg-success' : 'bg-muted-foreground/30'
+                    materialReady(m.id) ? 'bg-success' : 'bg-muted-foreground/30'
                   }`} />
                   <span className={`text-xs truncate ${
-                    materialContents[m.id]?.trim() || uploadedFiles[m.id] ? 'text-foreground' : 'text-muted-foreground'
+                    materialReady(m.id) ? 'text-foreground' : 'text-muted-foreground'
                   }`}>
                     {m.label}
+                    {uploadedFileCount(m.id) > 1 ? `（${uploadedFileCount(m.id)}份）` : ''}
                   </span>
                 </div>
               ))}

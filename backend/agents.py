@@ -252,6 +252,7 @@ def run_management_view_comparison(state: WorkflowState) -> AgentOutput:
     management = state.evidence_by_category(EvidenceCategory.MANAGEMENT_OPINION)
     sell_side = state.evidence_by_category(EvidenceCategory.SELL_SIDE_OPINION)
     financial = state.evidence_by_category(EvidenceCategory.FINANCIAL_FACT)
+    sell_side_documents = [doc for doc in state.source_documents if doc.source_type == SourceType.SELL_SIDE_SUMMARY]
     evidence_ids = [item.evidence_id for item in [*management, *sell_side, *financial]]
     missing = []
     if not management:
@@ -264,13 +265,22 @@ def run_management_view_comparison(state: WorkflowState) -> AgentOutput:
     return AgentOutput(
         agent_name="Management & View Comparison Agent",
         status=AgentStatus.PARTIAL if evidence_ids else AgentStatus.FAIL,
-        summary="已检查管理层、卖方与财务现实对比所需资料。",
+        summary=(
+            f"已检查管理层、卖方与财务现实对比所需资料；当前识别 {len(sell_side_documents)} 份卖方来源。"
+        ),
         findings=[
             AgentFinding(
                 title="卖方观点不得直接变成买方结论",
                 detail="卖方共识和分歧只能作为输入，最终判断必须经过证据、反证和价值陷阱检查。",
                 classification="ai_reasoning",
                 evidence_ids=evidence_ids,
+                confidence=Confidence.LOW,
+            ),
+            AgentFinding(
+                title="多卖方观点横向比较要求",
+                detail="如果上传多份卖方研报，必须比较共同点、分歧点、分歧来源、核心假设差异，并标出买方需独立验证的问题。",
+                classification="ai_reasoning",
+                evidence_ids=[item.evidence_id for item in sell_side],
                 confidence=Confidence.LOW,
             )
         ],

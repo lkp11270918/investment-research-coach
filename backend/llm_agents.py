@@ -201,10 +201,25 @@ MANAGEMENT_VIEW_PROMPT = (
 特别要求：
 - 管理层观点、卖方观点、新闻观点都只能作为观点输入，不得直接写成事实或买方结论。
 - 必须区分共识、分歧、少数派观点、核心假设差异和管理层可信度观察。
+- 如果存在多份卖方研报或多个 sell_side source，必须进行卖方观点横向比较：
+  1. 共同点：多家卖方都同意的判断或核心变量。
+  2. 分歧点：乐观、中性、谨慎观点之间的具体差异。
+  3. 分歧来源：差异来自增长假设、价格/销量、利润率、资本开支、政策/周期、渠道库存、估值倍数、风险权重，还是资料口径不同。
+  4. 核心假设差异：各卖方判断背后的关键假设是什么，哪些需要买方独立验证。
+  5. 复读风险：哪些卖方观点只是市场共识，不能直接作为买方结论。
 - 如果缺少管理层观点、卖方观点或财务事实，必须写入 missing_materials 并降低 confidence。
 - 不得根据模型常识补充材料未提供的卖方观点或管理层说法。
 - 每条 finding 尽量引用 evidence_ids；不要引用不存在的 evidence_id。
 - 输出应服务于买方研究训练，重点提示后续追问和需要验证的问题。
+
+findings 中应尽量包含这些标题类型：
+- 卖方共同点
+- 卖方分歧点
+- 分歧来源
+- 核心假设差异
+- 买方需独立验证的问题
+- 管理层叙事与卖方观点是否一致
+- 卖方观点与财务事实是否冲突
 
 返回 JSON 格式：
 {
@@ -821,6 +836,17 @@ def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClien
         for key, value in state.agent_outputs.items()
         if key in {"financial_quality_dividend", "business_model_moat"}
     }
+    sell_side_documents = [
+        {
+            "source_id": doc.source_id,
+            "title": doc.title,
+            "file_name": doc.file_name,
+            "period_covered": doc.period_covered,
+            "content_excerpt": doc.content[:4000],
+        }
+        for doc in state.source_documents
+        if doc.source_type == SourceType.SELL_SIDE_SUMMARY
+    ]
 
     try:
         result = client.generate_json(
@@ -842,6 +868,8 @@ def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClien
                     }
                     for item in view_evidence
                 ],
+                "sell_side_documents_for_cross_comparison": sell_side_documents,
+                "sell_side_document_count": len(sell_side_documents),
                 "prior_analysis_outputs": prior_outputs,
             },
         )
