@@ -24,6 +24,25 @@ export type BackendMemo = {
   markdown?: string | null
 }
 
+export type BackendFinding = {
+  title: string
+  detail: string
+  classification: string
+  evidence_ids: string[]
+  confidence: 'high' | 'medium' | 'low'
+}
+
+export type BackendAgentOutput = {
+  agent_name: string
+  status: 'pass' | 'partial' | 'fail'
+  summary: string
+  findings: BackendFinding[]
+  evidence_ids: string[]
+  missing_materials: string[]
+  confidence: 'high' | 'medium' | 'low'
+  warnings: string[]
+}
+
 export type AnalyzeResult = {
   run_id: string
   status: string
@@ -31,7 +50,24 @@ export type AnalyzeResult = {
     memo?: BackendMemo | null
     pre_memo_gate?: unknown
     post_memo_gate?: unknown
-    agent_outputs: Record<string, unknown>
+    evidence_items?: Array<{
+      evidence_id: string
+      category: string
+      statement: string
+      metric_name?: string | null
+      metric_value?: string | number | null
+      period?: string | null
+      unit?: string | null
+      confidence: 'high' | 'medium' | 'low'
+      verification_status: string
+      source_refs?: Array<{
+        source_id: string
+        excerpt?: string | null
+        row_id?: string | null
+        url?: string | null
+      }>
+    }>
+    agent_outputs: Record<string, BackendAgentOutput>
   }
 }
 
@@ -155,6 +191,42 @@ export async function analyzeCompany(input: {
     method: 'POST',
     headers: getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : undefined,
     body: formData,
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+
+  return response.json()
+}
+
+export async function reviewMemo(input: {
+  memoText: string
+  companyName?: string
+  industry?: string
+}): Promise<AnalyzeResult> {
+  const response = await fetch(`${API_BASE_URL}/api/review`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),
+    },
+    body: JSON.stringify({
+      company_profile: {
+        company_name: input.companyName || '未指定公司',
+        industry: input.industry || '未指定行业',
+        user_mode: 'to_c',
+      },
+      memo_text: input.memoText,
+      materials: [
+        {
+          title: '用户提交的研究 Memo',
+          content: input.memoText,
+          source_type: 'user_note',
+          usage_rights_confirmed: true,
+        },
+      ],
+    }),
   })
 
   if (!response.ok) {

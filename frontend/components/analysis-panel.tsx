@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { analyzeCompany, type AnalyzeResult } from '@/lib/api'
+import { analyzeCompany, type AnalyzeResult, type BackendAgentOutput } from '@/lib/api'
 
 export interface AnalysisData {
   stockCode: string
@@ -169,6 +169,62 @@ const agentSteps: AgentStep[] = [
   },
 ]
 
+const backendOutputKeyByStepId: Record<string, string> = {
+  doctrine: 'firm_doctrine_case_retrieval',
+  material: 'material_organizer',
+  evidence: 'evidence_extractor',
+  financial: 'financial_quality_dividend',
+  business: 'business_model_moat',
+  management: 'management_view_comparison',
+  valuetrap: 'value_trap_contradiction',
+  gate: 'pre_memo_gate',
+  memo: 'research_memo_generator',
+}
+
+function statusFromBackend(output?: BackendAgentOutput): AgentStep['status'] {
+  if (!output) return 'done'
+  if (output.status === 'fail' || output.warnings.length > 0 || output.missing_materials.length > 0) return 'warning'
+  return 'done'
+}
+
+function formatBackendOutput(output?: BackendAgentOutput): string[] {
+  if (!output) return ['后端未返回该步骤的详细输出。']
+  const lines: string[] = []
+  lines.push(`【结论】${output.summary}`)
+  if (output.findings.length > 0) {
+    for (const finding of output.findings.slice(0, 6)) {
+      lines.push(`✓ [${finding.classification}] ${finding.title}：${finding.detail}`)
+    }
+  }
+  if (output.missing_materials.length > 0) {
+    for (const item of output.missing_materials.slice(0, 6)) {
+      lines.push(`⚠ 缺失资料：${item}`)
+    }
+  }
+  if (output.warnings.length > 0) {
+    for (const warning of output.warnings.slice(0, 6)) {
+      lines.push(`⚠ ${warning}`)
+    }
+  }
+  lines.push(`→ 状态：${output.status} · 置信度：${output.confidence} · 证据数：${output.evidence_ids.length}`)
+  return lines
+}
+
+function stepsFromBackendResult(result: AnalyzeResult): AgentStep[] {
+  return agentSteps.map(step => {
+    const output = result.state.agent_outputs[backendOutputKeyByStepId[step.id]]
+    return {
+      ...step,
+      status: statusFromBackend(output),
+      output: formatBackendOutput(output),
+      warnings: [
+        ...(output?.warnings || []),
+        ...(output?.missing_materials || []).map(item => `缺：${item}`),
+      ].slice(0, 3),
+    }
+  })
+}
+
 interface AnalysisPanelProps {
   data: AnalysisData
   onComplete: (result: AnalyzeResult) => void
@@ -205,7 +261,7 @@ export function AnalysisPanel({ data, onComplete }: AnalysisPanelProps) {
 
       const result = await analyzeCompany(data)
       setAnalysisResult(result)
-      setSteps(prev => prev.map(s => ({ ...s, status: s.warnings?.length ? 'warning' : 'done' })))
+      setSteps(stepsFromBackendResult(result))
       setIsComplete(true)
       setProgress(100)
       onComplete(result)
@@ -451,7 +507,7 @@ export function AnalysisPanel({ data, onComplete }: AnalysisPanelProps) {
                 <div>
                   <div className="text-sm font-semibold text-foreground">研究分析完成</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    共完成 9 个 Agent 分析 · 价值投资框架覆盖 7/7 维度 · 来源标注完整率 92%
+                    已完成后端多 Agent 分析 · 生成 {analysisResult?.state.evidence_items?.length || 0} 条证据 · 可在上方展开查看真实 Agent 输出
                   </div>
                 </div>
                 <button
