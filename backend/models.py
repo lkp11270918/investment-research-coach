@@ -256,6 +256,23 @@ class AnalyzeResponse(BaseModel):
     state: WorkflowState
 
 
+class ResearchRunSummary(BaseModel):
+    run_id: str
+    run_type: str
+    company_name: str
+    ticker: str | None = None
+    industry: str | None = None
+    memo_confidence: Confidence | None = None
+    material_count: int = 0
+    evidence_count: int = 0
+    created_at: datetime
+
+
+class ResearchRunDetail(BaseModel):
+    summary: ResearchRunSummary
+    state: WorkflowState
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     service: str = "value-investing-research-coach"

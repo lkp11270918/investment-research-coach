@@ -30,6 +30,7 @@ export function NavHeader({
     { id: 'analysis', label: '研究分析', disabled: !hasAnalysisData },
     { id: 'memo', label: '研究 Memo', disabled: !hasAnalysisData },
     { id: 'review', label: '报告批改', disabled: false },
+    { id: 'history', label: '历史研究', disabled: false },
   ]
   return (
     <header

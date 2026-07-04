@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import os
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .auth import authenticate_user, create_access_token, create_user, get_current_user, init_auth_db, to_auth_user
+from .auth import authenticate_user, create_access_token, create_user, get_current_user, get_optional_current_user, init_auth_db, to_auth_user
 from .file_parsers import FileParseError, parse_uploaded_file
-from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, HealthResponse, LoginRequest, RegisterRequest, ReviewRequest
+from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, HealthResponse, LoginRequest, RegisterRequest, ResearchRunDetail, ResearchRunSummary, ReviewRequest
+from .storage import get_user_run, init_research_runs_db, list_user_runs, save_user_run
 from .workflow_runner import run_analysis_workflow, run_review_workflow
 
 
@@ -43,6 +44,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup() -> None:
     init_auth_db()
+    init_research_runs_db()
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -70,8 +72,9 @@ def me(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
-def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
+def analyze(request: AnalyzeRequest, current_user: AuthUser | None = Depends(get_optional_current_user)) -> AnalyzeResponse:
     state = run_analysis_workflow(request)
+    save_user_run(user_id=current_user.user_id if current_user else None, run_type="analysis", state=state)
     return AnalyzeResponse(run_id=state.run_id, status="completed", state=state)
 
 
@@ -82,6 +85,7 @@ async def analyze_files(
     text_materials: str | None = Form(None),
     material_ids: list[str] = Form(default=[]),
     files: list[UploadFile] = File(default=[]),
+    current_user: AuthUser | None = Depends(get_optional_current_user),
 ) -> AnalyzeResponse:
     try:
         payload = {
@@ -114,10 +118,28 @@ async def analyze_files(
         raise HTTPException(status_code=400, detail="请至少提供一份文本资料或上传文件")
 
     state = run_analysis_workflow(request)
+    save_user_run(user_id=current_user.user_id if current_user else None, run_type="analysis", state=state)
     return AnalyzeResponse(run_id=state.run_id, status="completed", state=state)
 
 
 @app.post("/api/review", response_model=AnalyzeResponse)
-def review(request: ReviewRequest) -> AnalyzeResponse:
+def review(request: ReviewRequest, current_user: AuthUser | None = Depends(get_optional_current_user)) -> AnalyzeResponse:
     state = run_review_workflow(request)
+    save_user_run(user_id=current_user.user_id if current_user else None, run_type="review", state=state)
     return AnalyzeResponse(run_id=state.run_id, status="completed", state=state)
+
+
+@app.get("/api/runs", response_model=list[ResearchRunSummary])
+def runs(
+    limit: int = Query(default=30, ge=1, le=100),
+    current_user: AuthUser = Depends(get_current_user),
+) -> list[ResearchRunSummary]:
+    return list_user_runs(current_user.user_id, limit=limit)
+
+
+@app.get("/api/runs/{run_id}", response_model=ResearchRunDetail)
+def run_detail(run_id: str, current_user: AuthUser = Depends(get_current_user)) -> ResearchRunDetail:
+    detail = get_user_run(current_user.user_id, run_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="未找到该研究记录")
+    return detail

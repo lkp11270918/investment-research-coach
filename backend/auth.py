@@ -285,3 +285,14 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
     if not user:
         raise HTTPException(status_code=401, detail="用户不存在，请重新登录")
     return to_auth_user(user)
+
+
+def get_optional_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)) -> AuthUser | None:
+    if not credentials:
+        return None
+    try:
+        user_id = verify_access_token(credentials.credentials)
+        user = get_user_by_id(user_id)
+        return to_auth_user(user) if user else None
+    except HTTPException:
+        return None

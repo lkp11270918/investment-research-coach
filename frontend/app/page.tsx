@@ -8,7 +8,8 @@ import { InputPanel } from '@/components/input-panel'
 import { AnalysisPanel, type AnalysisData } from '@/components/analysis-panel'
 import { MemoPanel } from '@/components/memo-panel'
 import { ReviewPanel } from '@/components/review-panel'
-import type { AnalyzeResult, AuthUser, BackendMemo } from '@/lib/api'
+import { HistoryPanel } from '@/components/history-panel'
+import type { AnalyzeResult, AuthUser, BackendMemo, ResearchRunDetail } from '@/lib/api'
 import { clearStoredToken, fetchCurrentUser, getStoredToken } from '@/lib/api'
 
 type AppView = 'landing' | 'app'
@@ -80,6 +81,23 @@ export default function Page() {
     setActiveTab('analysis')
   }
 
+  const handleOpenHistoryRun = (detail: ResearchRunDetail) => {
+    const profile = detail.state.company_profile
+    setAnalysisData({
+      stockCode: profile?.ticker || '',
+      companyName: profile?.company_name || detail.summary.company_name,
+      industry: profile?.industry || detail.summary.industry || '',
+      materials: [],
+    })
+    setAnalysisResult({
+      run_id: detail.summary.run_id,
+      status: 'completed',
+      state: detail.state,
+    })
+    setMemo(detail.state.memo || null)
+    setActiveTab(detail.state.memo ? 'memo' : 'analysis')
+  }
+
   return (
     <>
       {view === 'landing' && (
@@ -146,6 +164,14 @@ export default function Page() {
             )}
 
             {activeTab === 'review' && <ReviewPanel />}
+
+            {activeTab === 'history' && (
+              <HistoryPanel
+                isLoggedIn={isLoggedIn}
+                onLogin={handleLogin}
+                onOpenRun={handleOpenHistoryRun}
+              />
+            )}
           </main>
         </div>
       )}

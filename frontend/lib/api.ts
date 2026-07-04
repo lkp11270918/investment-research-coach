@@ -68,12 +68,34 @@ export type AnalyzeResult = {
   run_id: string
   status: string
   state: {
+    company_profile?: {
+      ticker?: string | null
+      company_name: string
+      industry: string
+    }
     memo?: BackendMemo | null
     pre_memo_gate?: unknown
     post_memo_gate?: unknown
     evidence_items?: BackendEvidenceItem[]
     agent_outputs: Record<string, BackendAgentOutput>
   }
+}
+
+export type ResearchRunSummary = {
+  run_id: string
+  run_type: 'analysis' | 'review' | string
+  company_name: string
+  ticker?: string | null
+  industry?: string | null
+  memo_confidence?: 'high' | 'medium' | 'low' | null
+  material_count: number
+  evidence_count: number
+  created_at: string
+}
+
+export type ResearchRunDetail = {
+  summary: ResearchRunSummary
+  state: AnalyzeResult['state']
 }
 
 export type AuthUser = {
@@ -241,5 +263,25 @@ export async function reviewMemo(input: {
     throw new Error(await parseError(response))
   }
 
+  return response.json()
+}
+
+export async function fetchResearchRuns(): Promise<ResearchRunSummary[]> {
+  const token = getStoredToken()
+  if (!token) throw new Error('请先登录后查看历史研究')
+  const response = await fetch(`${API_BASE_URL}/api/runs`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchResearchRun(runId: string): Promise<ResearchRunDetail> {
+  const token = getStoredToken()
+  if (!token) throw new Error('请先登录后查看历史研究')
+  const response = await fetch(`${API_BASE_URL}/api/runs/${runId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) throw new Error(await parseError(response))
   return response.json()
 }
