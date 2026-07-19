@@ -29,8 +29,10 @@ export function NavHeader({
     { id: 'input', label: '资料输入', disabled: false },
     { id: 'analysis', label: '研究分析', disabled: !hasAnalysisData },
     { id: 'memo', label: '研究 Memo', disabled: !hasAnalysisData },
+    { id: 'workspace', label: '研究工作台', disabled: false },
     { id: 'review', label: '报告批改', disabled: false },
     { id: 'history', label: '历史研究', disabled: false },
+    { id: 'capability', label: '能力成长', disabled: false },
   ]
   return (
     <header
@@ -64,14 +66,14 @@ export function NavHeader({
           </button>
 
           {/* Nav tabs */}
-          <nav className="flex items-center gap-0.5">
+          <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => !tab.disabled && onTabChange(tab.id)}
                 disabled={tab.disabled}
                 title={tab.disabled ? '请先完成资料输入并开始分析' : undefined}
-                className="relative px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-150"
+                className="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150"
                 style={{
                   color: tab.disabled
                     ? 'oklch(0.35 0.01 240)'

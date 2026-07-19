@@ -67,6 +67,7 @@ export type BackendEvidenceItem = {
 export type AnalyzeResult = {
   run_id: string
   status: string
+  project_id?: string | null
   state: {
     company_profile?: {
       ticker?: string | null
@@ -77,8 +78,144 @@ export type AnalyzeResult = {
     pre_memo_gate?: unknown
     post_memo_gate?: unknown
     evidence_items?: BackendEvidenceItem[]
+    workflow_status?: string
     agent_outputs: Record<string, BackendAgentOutput>
   }
+}
+
+export type CompanyProfile = {
+  ticker?: string | null
+  company_name: string
+  industry: string
+  market?: string | null
+  research_language?: 'zh' | 'en'
+  user_mode?: 'to_c' | 'to_b'
+}
+
+export type ResearchProjectSummary = {
+  project_id: string
+  company_profile: CompanyProfile
+  research_objective?: string | null
+  investment_horizon?: string | null
+  initial_view?: string | null
+  key_question?: string | null
+  status: 'active' | 'archived'
+  run_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type EvidenceGraphNode = {
+  node_id: string
+  node_type: string
+  label: string
+  evidence_id?: string | null
+  source_id?: string | null
+  confidence: 'high' | 'medium' | 'low'
+  verification_status: 'verified' | 'partially_supported' | 'unsupported' | 'to_be_verified'
+  metadata: Record<string, unknown>
+}
+
+export type EvidenceGraphEdge = {
+  edge_id: string
+  from_node_id: string
+  to_node_id: string
+  relation: 'from_source' | 'supports' | 'contradicts' | 'depends_on' | 'duplicates' | 'mentions'
+  rationale?: string | null
+  confidence: 'high' | 'medium' | 'low'
+}
+
+export type EvidenceGraph = {
+  nodes: EvidenceGraphNode[]
+  edges: EvidenceGraphEdge[]
+  conflicts: string[]
+  updated_at: string
+}
+
+export type ResearchQuestion = {
+  question_id: string
+  category: string
+  question: string
+  priority: number
+  status: 'unanswered' | 'partial' | 'answered' | 'conflicted'
+  evidence_ids: string[]
+  missing_materials: string[]
+}
+
+export type ResearchMap = {
+  project_id: string
+  industry: string
+  questions: ResearchQuestion[]
+  next_questions: string[]
+  completion_rate: number
+  updated_at: string
+}
+
+export type ThesisDraft = {
+  core_view: string
+  core_variables: Array<{ name: string; rationale: string; evidence_ids: string[] }>
+  supporting_evidence_ids: string[]
+  counter_evidence_ids: string[]
+  assumptions: string[]
+  falsification_conditions: string[]
+  unknowns: string[]
+  user_internal_label?: string | null
+}
+
+export type ThesisVersion = {
+  thesis_id: string
+  project_id: string
+  version: number
+  draft: ThesisDraft
+  assessment: {
+    status: 'pass' | 'partial' | 'fail'
+    issues: string[]
+    evidence_coverage: number
+    sell_side_repetition_risk: boolean
+    confidence: 'high' | 'medium' | 'low'
+  }
+  created_at: string
+}
+
+export type DefenseTurn = {
+  turn_id: string
+  role: 'portfolio_manager' | 'industry_researcher' | 'financial_researcher' | 'risk_manager'
+  question: string
+  thesis_reference?: string | null
+  evidence_ids: string[]
+  answer?: string | null
+  answer_evidence_ids: string[]
+  score?: number | null
+  feedback?: string | null
+  passed?: boolean | null
+}
+
+export type DefenseSession = {
+  session_id: string
+  project_id: string
+  thesis_id: string
+  status: 'active' | 'completed'
+  turns: DefenseTurn[]
+  overall_score?: number | null
+  improvement_tasks: string[]
+  created_at: string
+  updated_at: string
+}
+
+export type CapabilityProfile = {
+  profile_id: string
+  user_id: string
+  dimensions: Array<{
+    dimension: string
+    score: number
+    evidence: string[]
+    repeated_errors: string[]
+  }>
+  strengths: string[]
+  priorities: string[]
+  recommended_tasks: string[]
+  sample_count: number
+  created_at: string
 }
 
 export type ResearchRunSummary = {
@@ -187,7 +324,7 @@ export async function analyzeCompany(input: {
   industry: string
   materials: FrontendMaterial[]
 }): Promise<AnalyzeResult> {
-  const companyProfile = {
+  const companyProfile: CompanyProfile = {
     ticker: input.stockCode,
     company_name: input.companyName,
     industry: input.industry || '未指定行业',
@@ -209,6 +346,16 @@ export async function analyzeCompany(input: {
   })
 
   const formData = new FormData()
+  let projectId: string | null = null
+  if (getStoredToken()) {
+    const project = await createResearchProject({
+      company_profile: companyProfile,
+      research_objective: '完成证据驱动的买方研究',
+      key_question: '什么证据支持或推翻当前研究判断？',
+    })
+    projectId = project.project_id
+    formData.append('project_id', projectId)
+  }
   formData.append('company_profile', JSON.stringify(companyProfile))
   formData.append('text_materials', JSON.stringify(textMaterials))
   formData.append('options', JSON.stringify({ skip_post_gate: false, enable_parallel: true }))
@@ -227,7 +374,8 @@ export async function analyzeCompany(input: {
     throw new Error(await parseError(response))
   }
 
-  return response.json()
+  const result: AnalyzeResult = await response.json()
+  return { ...result, project_id: projectId }
 }
 
 export async function reviewMemo(input: {
@@ -282,6 +430,109 @@ export async function fetchResearchRun(runId: string): Promise<ResearchRunDetail
   const response = await fetch(`${API_BASE_URL}/api/runs/${runId}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+function authHeaders(json = false): HeadersInit {
+  const token = getStoredToken()
+  if (!token) throw new Error('请先登录后使用研究工作台')
+  return {
+    Authorization: `Bearer ${token}`,
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+  }
+}
+
+export async function createResearchProject(input: {
+  company_profile: CompanyProfile
+  research_objective?: string
+  investment_horizon?: string
+  initial_view?: string
+  key_question?: string
+}): Promise<ResearchProjectSummary> {
+  const response = await fetch(`${API_BASE_URL}/api/projects`, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchResearchProjects(): Promise<ResearchProjectSummary[]> {
+  const response = await fetch(`${API_BASE_URL}/api/projects`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchEvidenceGraph(projectId: string): Promise<EvidenceGraph> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/evidence-graph`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function reviewEvidenceNode(projectId: string, nodeId: string, verificationStatus: EvidenceGraphNode['verification_status']): Promise<EvidenceGraph> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/evidence-graph/nodes/${encodeURIComponent(nodeId)}`, {
+    method: 'PATCH',
+    headers: authHeaders(true),
+    body: JSON.stringify({ verification_status: verificationStatus }),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchResearchMap(projectId: string): Promise<ResearchMap> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/research-map`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchThesisHistory(projectId: string): Promise<ThesisVersion[]> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/thesis`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function saveThesis(projectId: string, draft: ThesisDraft): Promise<ThesisVersion> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/thesis`, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(draft),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchDefenseSessions(projectId: string): Promise<DefenseSession[]> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/defense`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function startDefense(projectId: string): Promise<DefenseSession> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/defense`, { method: 'POST', headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function answerDefense(sessionId: string, answer: string, evidenceIds: string[]): Promise<DefenseSession> {
+  const response = await fetch(`${API_BASE_URL}/api/defense/${sessionId}/answer`, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify({ answer, evidence_ids: evidenceIds }),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function refreshCapabilityProfile(): Promise<CapabilityProfile> {
+  const response = await fetch(`${API_BASE_URL}/api/capability-profile`, { method: 'POST', headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchCapabilityProfileHistory(): Promise<CapabilityProfile[]> {
+  const response = await fetch(`${API_BASE_URL}/api/capability-profile/history`, { headers: authHeaders() })
   if (!response.ok) throw new Error(await parseError(response))
   return response.json()
 }

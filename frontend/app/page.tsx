@@ -9,6 +9,8 @@ import { AnalysisPanel, type AnalysisData } from '@/components/analysis-panel'
 import { MemoPanel } from '@/components/memo-panel'
 import { ReviewPanel } from '@/components/review-panel'
 import { HistoryPanel } from '@/components/history-panel'
+import { ResearchWorkspacePanel } from '@/components/research-workspace-panel'
+import { CapabilityPanel } from '@/components/capability-panel'
 import type { AnalyzeResult, AuthUser, BackendMemo, ResearchRunDetail } from '@/lib/api'
 import { clearStoredToken, fetchCurrentUser, getStoredToken } from '@/lib/api'
 
@@ -24,6 +26,7 @@ export default function Page() {
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalyzeResult | null>(null)
   const [memo, setMemo] = useState<BackendMemo | null>(null)
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null)
 
   useEffect(() => {
     const token = getStoredToken()
@@ -67,6 +70,7 @@ export default function Page() {
     setAnalysisData(null)
     setAnalysisResult(null)
     setMemo(null)
+    setCurrentProjectId(null)
   }
 
   const handleStartAnalysis = (data: {
@@ -77,6 +81,7 @@ export default function Page() {
   }) => {
     setMemo(null)
     setAnalysisResult(null)
+    setCurrentProjectId(null)
     setAnalysisData(data)
     setActiveTab('analysis')
   }
@@ -95,6 +100,7 @@ export default function Page() {
       state: detail.state,
     })
     setMemo(detail.state.memo || null)
+    setCurrentProjectId(null)
     setActiveTab(detail.state.memo ? 'memo' : 'analysis')
   }
 
@@ -133,6 +139,7 @@ export default function Page() {
                 onComplete={(result) => {
                   setAnalysisResult(result)
                   setMemo(result.state.memo || null)
+                  setCurrentProjectId(result.project_id || null)
                   setActiveTab('memo')
                 }}
               />
@@ -165,12 +172,25 @@ export default function Page() {
 
             {activeTab === 'review' && <ReviewPanel />}
 
+            {activeTab === 'workspace' && (
+              <ResearchWorkspacePanel
+                isLoggedIn={isLoggedIn}
+                projectId={currentProjectId}
+                companyName={analysisData?.companyName}
+                onLogin={handleLogin}
+              />
+            )}
+
             {activeTab === 'history' && (
               <HistoryPanel
                 isLoggedIn={isLoggedIn}
                 onLogin={handleLogin}
                 onOpenRun={handleOpenHistoryRun}
               />
+            )}
+
+            {activeTab === 'capability' && (
+              <CapabilityPanel isLoggedIn={isLoggedIn} onLogin={handleLogin} />
             )}
           </main>
         </div>

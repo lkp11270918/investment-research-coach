@@ -269,7 +269,7 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
           <input
             ref={fileRef}
             type="file"
-            accept=".txt,.md,.csv,.docx,.xlsx,.pdf"
+            accept=".txt,.md,.csv,.docx,.xlsx,.pdf,.png,.jpg,.jpeg,.webp,.mp3,.m4a,.wav,.mp4"
             multiple={activeType === 'sellside'}
             className="hidden"
             onChange={handleFileChange}
@@ -378,7 +378,7 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
                   <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
                     <span>{(materialContents[activeType] || '').length} 字</span>
                     <div className="flex items-center gap-3">
-                      <span>支持 DOCX / XLSX / PDF / CSV / Markdown / TXT</span>
+                      <span>支持文档 / 表格 / 图片 / 音频</span>
                       {uploadedFileCount(activeType) > 0 && (
                         <span className="text-primary flex items-center gap-1">
                           已上传：{uploadedFileCount(activeType)} 份
