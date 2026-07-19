@@ -126,6 +126,31 @@ Generated workflow runs are saved under:
 
 - `data/runs/`
 
+## To C Research Workspace API
+
+- `POST /api/projects`: create a persistent company research project.
+- `GET /api/projects`: list the current user's projects.
+- `GET/PATCH /api/projects/{project_id}`: read or update project context.
+- `GET /api/projects/{project_id}/evidence-graph`: read the accumulated Evidence Graph.
+- `PATCH /api/projects/{project_id}/evidence-graph/nodes/{node_id}`: confirm or reject evidence.
+- `GET /api/projects/{project_id}/research-map`: generate the evidence-aware research question tree.
+- `POST/GET /api/projects/{project_id}/thesis`: create and list Thesis versions.
+- `POST/GET /api/projects/{project_id}/defense`: start and list investment committee defenses.
+- `POST /api/defense/{session_id}/answer`: answer the current defense question.
+- `POST /api/capability-profile`: refresh the behavior-based capability profile.
+- `GET /api/capability-profile/history`: list capability profile snapshots.
+
+Image and audio files are accepted by `/api/analyze-files` when a multimodal OpenAI
+model and API key are configured. Model inferences and unknown speaker attribution
+remain explicitly marked for confirmation.
+
+Run backend regression and the PRD benchmark with:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m backend.evals.run_eval
+```
+
 ## Product Boundary
 
 This product is not a stock recommendation tool. It does not produce public deterministic investment advice, trading instructions, short-term price predictions, or return guarantees.

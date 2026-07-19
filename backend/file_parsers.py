@@ -9,10 +9,11 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-from .models import RawMaterial, SourceType
+from .models import ContentBlock, MaterialModality, RawMaterial, SourceType
+from .multimodal_parser import MultimodalParseError, parse_audio, parse_image
 
 
-SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf"}
+SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".mp3", ".m4a", ".wav", ".mp4"}
 
 
 class FileParseError(ValueError):
@@ -44,6 +45,9 @@ def parse_uploaded_file(
     if ext not in SUPPORTED_EXTENSIONS:
         raise FileParseError(f"暂不支持的文件类型：{ext or 'unknown'}")
 
+    blocks: list[ContentBlock] = []
+    warnings: list[str] = []
+    modality = MaterialModality.TEXT
     if ext in {".txt", ".md"}:
         content = _decode_text(data)
     elif ext == ".csv":
@@ -54,6 +58,18 @@ def parse_uploaded_file(
         content = _parse_xlsx(data)
     elif ext == ".pdf":
         content = _parse_pdf(data)
+    elif ext in {".png", ".jpg", ".jpeg", ".webp"}:
+        modality = MaterialModality.IMAGE
+        try:
+            content, blocks, warnings = parse_image(filename, data)
+        except MultimodalParseError as exc:
+            raise FileParseError(str(exc)) from exc
+    elif ext in {".mp3", ".m4a", ".wav", ".mp4"}:
+        modality = MaterialModality.AUDIO
+        try:
+            content, blocks, warnings = parse_audio(filename, data)
+        except MultimodalParseError as exc:
+            raise FileParseError(str(exc)) from exc
     else:
         raise FileParseError(f"暂不支持的文件类型：{ext}")
 
@@ -61,13 +77,48 @@ def parse_uploaded_file(
     if not content:
         raise FileParseError(f"文件未解析出有效文本：{filename}")
 
+    if not blocks:
+        blocks = _blocks_from_content(content, ext)
+        if ext in {".csv", ".xlsx"}:
+            modality = MaterialModality.TABLE
     return RawMaterial(
         title=title or filename,
         content=content,
         source_type=source_type_from_material_id(material_id),
         file_name=filename,
         usage_rights_confirmed=True,
+        modality=modality,
+        blocks=blocks,
+        parse_warnings=warnings,
     )
+
+
+def _blocks_from_content(content: str, ext: str) -> list[ContentBlock]:
+    blocks: list[ContentBlock] = []
+    current_page: int | None = None
+    current_sheet: str | None = None
+    paragraph = 0
+    row = 0
+    for line in content.splitlines():
+        stripped = line.strip()
+        page_match = re.fullmatch(r"## Page (\d+)", stripped)
+        if page_match:
+            current_page = int(page_match.group(1))
+            paragraph = 0
+            continue
+        if ext == ".xlsx" and stripped.startswith("## "):
+            current_sheet = stripped[3:]
+            row = 0
+            continue
+        if not stripped:
+            continue
+        if ext in {".csv", ".xlsx"}:
+            row += 1
+            blocks.append(ContentBlock(modality=MaterialModality.TABLE, content=stripped, sheet=current_sheet, row=row))
+        else:
+            paragraph += 1
+            blocks.append(ContentBlock(modality=MaterialModality.TEXT, content=stripped, page=current_page, paragraph=paragraph))
+    return blocks
 
 
 def _decode_text(data: bytes) -> str:

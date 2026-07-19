@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .agents import (
     run_firm_doctrine_case_retrieval,
+    run_gate_blocked_memo,
 )
 from .llm_agents import (
     run_business_model_moat_llm,
@@ -17,6 +18,7 @@ from .llm_agents import (
     run_value_trap_contradiction_llm,
 )
 from .models import AnalyzeRequest, ReviewRequest, WorkflowState, WorkflowStopAfter
+from .evidence_graph import build_evidence_graph
 from .storage import save_run
 
 
@@ -75,16 +77,24 @@ def run_analysis_workflow(request: AnalyzeRequest) -> WorkflowState:
     if _should_stop(request, WorkflowStopAfter.VALUE_TRAP):
         return _save_and_return(state)
 
+    state.evidence_graph = build_evidence_graph(state)
     state.pre_memo_gate = run_compliance_gate_llm(state, "pre_memo_gate")
     if _should_stop(request, WorkflowStopAfter.PRE_MEMO_GATE):
         return _save_and_return(state)
 
-    state.memo = run_research_memo_generator_llm(state)
+    if state.pre_memo_gate.status == "fail":
+        state.workflow_status = "needs_evidence"
+        state.memo = run_gate_blocked_memo(state)
+    else:
+        state.memo = run_research_memo_generator_llm(state)
     if _should_stop(request, WorkflowStopAfter.MEMO):
         return _save_and_return(state)
 
     if not request.options.skip_post_gate:
         state.post_memo_gate = run_compliance_gate_llm(state, "post_memo_gate", state.memo)
+        if state.post_memo_gate.status == "fail" and state.workflow_status == "completed":
+            state.workflow_status = "needs_revision"
+    state.evidence_graph = build_evidence_graph(state)
 
     return _save_and_return(state)
 
@@ -116,6 +126,7 @@ def run_review_workflow(request: ReviewRequest) -> WorkflowState:
 
     review = run_research_coach_review_llm(request.memo_text, state)
     state.agent_outputs["research_coach_review"] = review
+    state.evidence_graph = build_evidence_graph(state)
 
     save_run(state, state.run_id)
     return state

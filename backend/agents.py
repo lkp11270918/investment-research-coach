@@ -80,6 +80,9 @@ def run_material_organizer(state: WorkflowState) -> AgentOutput:
                 url=raw.url,
                 usage_rights_confirmed=raw.usage_rights_confirmed,
                 period_covered=raw.period_covered,
+                modality=raw.modality,
+                blocks=raw.blocks,
+                parse_warnings=raw.parse_warnings,
                 reliability_note="用户提供资料，需以后续证据抽取和交叉验证为准。",
                 content=raw.content,
             )
@@ -337,12 +340,39 @@ def run_compliance_gate(state: WorkflowState, gate_name: str, draft_memo: Resear
     for item in state.evidence_items:
         if item.category in {EvidenceCategory.FACT, EvidenceCategory.FINANCIAL_FACT} and not item.source_refs:
             unsupported.append(item.statement)
+        if item.verification_status in {VerificationStatus.UNSUPPORTED, VerificationStatus.TO_BE_VERIFIED} and item.category in {EvidenceCategory.FACT, EvidenceCategory.FINANCIAL_FACT}:
+            evidence_issues.append(f"关键事实尚未验证：{item.statement}")
+
+    if state.evidence_graph.conflicts:
+        evidence_issues.extend(f"跨来源数据冲突：{item}" for item in state.evidence_graph.conflicts)
+
+    for key, output in state.agent_outputs.items():
+        for finding in output.findings:
+            if finding.classification in {"fact_based", "unsupported_claim"} and not finding.evidence_ids:
+                unsupported.append(f"{key}：{finding.title} - {finding.detail}")
+
+    trap_output = state.agent_outputs.get("value_trap_contradiction")
+    if not trap_output or not trap_output.findings:
+        evidence_issues.append("价值陷阱与反证检查未完成，不能进入 Memo。")
+
+    support_ids = {evidence_id for output in state.agent_outputs.values() for finding in output.findings for evidence_id in finding.evidence_ids}
+    if support_ids:
+        categories = {item.category for item in state.evidence_items if item.evidence_id in support_ids}
+        if categories and categories.issubset({EvidenceCategory.SELL_SIDE_OPINION, EvidenceCategory.MANAGEMENT_OPINION, EvidenceCategory.NEWS_OR_MARKET_OPINION}):
+            evidence_issues.append("当前分析只引用观点类材料，缺少独立事实证据，存在复读风险。")
 
     if state.company_profile.user_mode == UserMode.TO_C and draft_memo and draft_memo.markdown:
         forbidden = ["买入", "卖出", "增持", "减持", "强烈推荐", "立即买"]
         for word in forbidden:
             if word in draft_memo.markdown:
                 warnings.append(f"To C 输出包含禁止评级或交易表达：{word}")
+
+    if draft_memo:
+        valid_ids = {item.evidence_id for item in state.evidence_items}
+        for section in draft_memo.sections:
+            unknown_ids = [item for item in section.evidence_ids if item not in valid_ids]
+            if unknown_ids:
+                evidence_issues.append(f"Memo章节《{section.title}》引用不存在的证据：{', '.join(unknown_ids)}")
 
     if any(output.status == AgentStatus.FAIL for output in state.agent_outputs.values()):
         downgraded.append(
@@ -423,6 +453,20 @@ def run_research_memo_generator(state: WorkflowState) -> ResearchMemo:
     )
     memo.markdown = "\n\n".join(f"## {section.title}\n\n{section.body}" for section in sections)
     return memo
+
+
+def run_gate_blocked_memo(state: WorkflowState) -> ResearchMemo:
+    gate = state.pre_memo_gate
+    blockers = [] if gate is None else [*gate.unsupported_claims, *gate.evidence_issues, *gate.compliance_warnings]
+    body = "当前研究未通过证据与合规门禁，不能生成正式研究 Memo。"
+    if blockers:
+        body += "\n\n必须先解决：\n" + "\n".join(f"- {item}" for item in blockers)
+    sections = [
+        MemoSection(section_id="gate_status", title="证据门禁状态", body=body, confidence=Confidence.LOW),
+        MemoSection(section_id="material_scope", title="当前资料范围", body=f"已收到 {len(state.source_documents)} 份资料、抽取 {len(state.evidence_items)} 条证据；资料不足或冲突部分仍待验证。", evidence_ids=[item.evidence_id for item in state.evidence_items], confidence=Confidence.LOW),
+    ]
+    markdown = "# 待补证据研究草稿\n\n" + "\n\n".join(f"## {section.title}\n\n{section.body}" for section in sections) + f"\n\n## 免责声明\n\n{DISCLAIMER_ZH}"
+    return ResearchMemo(company_profile=state.company_profile, user_mode=state.company_profile.user_mode, confidence=Confidence.LOW, sections=sections, source_ids=[doc.source_id for doc in state.source_documents], disclaimer=DISCLAIMER_ZH, markdown=markdown)
 
 
 def run_research_coach_review(memo_text: str, state: WorkflowState) -> AgentOutput:

@@ -521,6 +521,9 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
                         "file_name": material.file_name,
                         "url": material.url,
                         "period_covered": material.period_covered,
+                        "modality": material.modality.value,
+                        "parse_warnings": material.parse_warnings,
+                        "block_count": len(material.blocks),
                         "content_excerpt": material.content[:4000],
                     }
                     for index, material in enumerate(state.raw_materials)
@@ -547,6 +550,9 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
                 period_covered=llm_doc.get("period_covered") or raw.period_covered,
                 reliability_note=llm_doc.get("reliability_note") or "用户提供资料，需以后续证据抽取和交叉验证为准。",
                 content=raw.content,
+                modality=raw.modality,
+                blocks=raw.blocks,
+                parse_warnings=raw.parse_warnings,
             )
         )
     state.source_documents = documents
