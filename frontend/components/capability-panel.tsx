@@ -5,7 +5,7 @@ import { RefreshCw, Target } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { fetchCapabilityProfileHistory, refreshCapabilityProfile, type CapabilityProfile } from '@/lib/api'
+import { fetchCapabilityProfileHistory, fetchCurrentCapabilityProfile, refreshCapabilityProfile, type CapabilityProfile } from '@/lib/api'
 
 interface CapabilityPanelProps {
   isLoggedIn: boolean
@@ -39,14 +39,10 @@ export function CapabilityPanel({ isLoggedIn, onLogin }: CapabilityPanelProps) {
       .then(async history => {
         if (cancelled) return
         setHistoryCount(history.length)
-        if (history.length) {
-          setProfile(history[0])
-          return
-        }
-        const next = await refreshCapabilityProfile()
+        const next = await fetchCurrentCapabilityProfile()
         if (!cancelled) {
           setProfile(next)
-          setHistoryCount(1)
+          setHistoryCount(history.length)
         }
       })
       .catch(error => !cancelled && setError(error instanceof Error ? error.message : '能力画像加载失败'))

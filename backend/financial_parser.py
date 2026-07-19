@@ -19,17 +19,29 @@ FINANCIAL_METRICS: tuple[FinancialMetricSpec, ...] = (
     FinancialMetricSpec("net_profit", ("净利润", "归母净利润", "母公司股东的净利润", "net profit"), "元"),
     FinancialMetricSpec("operating_cash_flow", ("经营现金流", "经营活动现金流", "经营活动产生的现金流量净额", "cfo"), "元"),
     FinancialMetricSpec("free_cash_flow", ("自由现金流", "fcf", "free cash flow"), "元"),
-    FinancialMetricSpec("dividend", ("分红", "现金分红", "股利", "dividend"), "元"),
+    FinancialMetricSpec("dividend_per_share", ("每股股利", "每股分红", "dividend per share"), "元/股"),
+    FinancialMetricSpec("dividend", ("现金分红", "分红总额", "股利总额", "dividend"), "元"),
     FinancialMetricSpec("debt_to_asset_ratio", ("资产负债率", "debt to asset", "liability ratio"), "%"),
     FinancialMetricSpec("interest_bearing_debt", ("有息负债", "带息负债", "interest-bearing debt"), "元"),
     FinancialMetricSpec("roe", ("roe", "净资产收益率", "加权平均净资产收益率"), "%"),
     FinancialMetricSpec("non_recurring_pnl", ("非经常性损益", "非经损益", "non-recurring"), "元"),
     FinancialMetricSpec("accounts_receivable", ("应收账款", "应收款项", "accounts receivable"), "元"),
     FinancialMetricSpec("inventory", ("存货", "inventory"), "元"),
+    FinancialMetricSpec("capital_expenditure", ("资本开支", "资本性支出", "购建固定资产、无形资产和其他长期资产支付的现金", "capex"), "元"),
+    FinancialMetricSpec("total_assets", ("资产总计", "总资产", "total assets"), "元"),
+    FinancialMetricSpec("total_liabilities", ("负债合计", "总负债", "total liabilities"), "元"),
+    FinancialMetricSpec("shareholders_equity", ("股东权益合计", "所有者权益合计", "净资产", "shareholders equity"), "元"),
+    FinancialMetricSpec("market_cap", ("总市值", "市值", "market cap"), "元"),
+    FinancialMetricSpec("share_price", ("股价", "收盘价", "share price"), "元/股"),
+    FinancialMetricSpec("eps", ("每股收益", "基本每股收益", "稀释每股收益", "eps", "earnings per share"), "元/股"),
+    FinancialMetricSpec("book_value_per_share", ("每股净资产", "每股账面价值", "book value per share", "bvps"), "元/股"),
+    FinancialMetricSpec("shares_outstanding", ("总股本", "期末股份总数", "已发行股份", "shares outstanding"), "股"),
+    FinancialMetricSpec("gross_profit", ("毛利润", "毛利", "gross profit"), "元"),
+    FinancialMetricSpec("selling_expense", ("销售费用", "selling expense"), "元"),
 )
 
 
-_PERIOD_RE = re.compile(r"(20\d{2}(?:\s*[年/-]\s*(?:Q[1-4]|[一二三四]季度|H[12]|半年度|年度|年报|[01]?\d月)?)?|FY\s*20\d{2}|20\d{2}\s*Q[1-4])", re.I)
+_PERIOD_RE = re.compile(r"(?<!\d)(20\d{2}(?:\s*[年/-]\s*(?:Q[1-4]|[一二三四]季度|H[12]|半年度|年度|年报|[01]?\d月)?)?|FY\s*20\d{2}|20\d{2}\s*Q[1-4])(?!\d)", re.I)
 _NUMBER_RE = re.compile(r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?")
 
 
@@ -204,7 +216,7 @@ def _infer_unit(cell: str, row: str, default_unit: str | None) -> str | None:
     target = f"{cell} {row}"
     if "%" in cell or default_unit == "%":
         return "%"
-    for unit in ("亿元", "万元", "百万元", "千元", "元"):
+    for unit in ("USD/shares", "USD", "元/股", "亿元", "万元", "百万元", "千元", "元"):
         if unit in target:
             return unit
     return default_unit

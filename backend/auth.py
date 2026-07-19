@@ -166,6 +166,20 @@ def init_auth_db() -> None:
         )
 
 
+def delete_user_account(user_id: str) -> None:
+    database_url = get_settings().database_url
+    tables = ("research_behavior_events", "capability_profiles", "defense_sessions", "memo_versions", "research_tasks", "thesis_versions", "research_map_versions", "evidence_graph_versions", "project_materials", "project_evidence_graphs", "research_runs", "research_projects", "users")
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn:
+            for table in tables: conn.execute(f"DELETE FROM {table} WHERE user_id=%s", (user_id,))
+    else:
+        with _sqlite_connection(database_url) as conn:
+            for table in tables:
+                conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
+        return
+
+
 def _row_to_user_record(row: Any) -> UserRecord | None:
     if not row:
         return None

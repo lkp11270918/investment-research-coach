@@ -20,6 +20,7 @@ from .models import (
     ResearchProjectUpdate,
     EvidenceGraph,
     EvidenceNodeReview,
+    EvidenceEdgeReview,
     ResearchRunDetail,
     ResearchRunSummary,
     WorkflowState,
@@ -28,6 +29,15 @@ from .models import (
     CapabilityProfile,
     ProjectMaterial,
     ResearchTask,
+    Confidence,
+    MaterialBlockReview,
+    MemoVersion,
+    MemoVersionCreate,
+    MemoSuggestion,
+    ResearchBehaviorEvent,
+    ResearchTaskUpdate,
+    VerificationStatus,
+    ResearchMap,
 )
 
 
@@ -157,12 +167,17 @@ def _init_postgres_projects(conn: Any) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_research_projects_user_updated ON research_projects (user_id, updated_at DESC)")
     conn.execute("CREATE TABLE IF NOT EXISTS project_evidence_graphs (project_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS evidence_graph_versions (project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id,version))")
     conn.execute("CREATE TABLE IF NOT EXISTS thesis_versions (thesis_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, UNIQUE(project_id, version))")
     conn.execute("CREATE TABLE IF NOT EXISTS defense_sessions (session_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS capability_profiles (profile_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS project_materials (material_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, run_id TEXT NOT NULL, logical_key TEXT NOT NULL, content_hash TEXT NOT NULL, version INTEGER NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, UNIQUE(project_id, content_hash))")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_project_materials_project_created ON project_materials (project_id, created_at ASC)")
     conn.execute("CREATE TABLE IF NOT EXISTS research_tasks (task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, source_id TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, UNIQUE(project_id, source_id))")
+    conn.execute("CREATE TABLE IF NOT EXISTS memo_versions (memo_version_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, source_run_id TEXT, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, UNIQUE(project_id, version), UNIQUE(project_id, source_run_id))")
+    conn.execute("CREATE TABLE IF NOT EXISTS research_behavior_events (event_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, project_id TEXT, action TEXT NOT NULL, dimension TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_behavior_user_created ON research_behavior_events(user_id, created_at ASC)")
+    conn.execute("CREATE TABLE IF NOT EXISTS research_map_versions (project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, fingerprint TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id,version))")
 
 
 def _init_sqlite_projects(conn: sqlite3.Connection) -> None:
@@ -184,12 +199,41 @@ def _init_sqlite_projects(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_research_projects_user_updated ON research_projects (user_id, updated_at DESC)")
     conn.execute("CREATE TABLE IF NOT EXISTS project_evidence_graphs (project_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS evidence_graph_versions (project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,version))")
     conn.execute("CREATE TABLE IF NOT EXISTS thesis_versions (thesis_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(project_id, version))")
     conn.execute("CREATE TABLE IF NOT EXISTS defense_sessions (session_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS capability_profiles (profile_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS project_materials (material_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, run_id TEXT NOT NULL, logical_key TEXT NOT NULL, content_hash TEXT NOT NULL, version INTEGER NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(project_id, content_hash))")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_project_materials_project_created ON project_materials (project_id, created_at ASC)")
     conn.execute("CREATE TABLE IF NOT EXISTS research_tasks (task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, source_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(project_id, source_id))")
+    conn.execute("CREATE TABLE IF NOT EXISTS memo_versions (memo_version_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, source_run_id TEXT, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(project_id, version), UNIQUE(project_id, source_run_id))")
+    conn.execute("CREATE TABLE IF NOT EXISTS research_behavior_events (event_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, project_id TEXT, action TEXT NOT NULL, dimension TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_behavior_user_created ON research_behavior_events(user_id, created_at ASC)")
+    conn.execute("CREATE TABLE IF NOT EXISTS research_map_versions (project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, fingerprint TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,version))")
+
+
+def list_research_map_versions(user_id: str, project_id: str) -> list[ResearchMap]:
+    database_url = get_settings().database_url
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: rows = conn.execute("SELECT payload FROM research_map_versions WHERE user_id=%s AND project_id=%s ORDER BY version", (user_id, project_id)).fetchall()
+    else:
+        with _sqlite_connection(database_url) as conn: rows = conn.execute("SELECT payload FROM research_map_versions WHERE user_id=? AND project_id=? ORDER BY version", (user_id, project_id)).fetchall()
+    return [ResearchMap.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0]) for row in rows]
+
+
+def save_research_map_version(user_id: str, research_map: ResearchMap) -> ResearchMap:
+    history = list_research_map_versions(user_id, research_map.project_id)
+    if history and history[-1].context_fingerprint == research_map.context_fingerprint:
+        return history[-1]
+    database_url = get_settings().database_url
+    payload = json.dumps(research_map.model_dump(mode="json"), ensure_ascii=False)
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: conn.execute("INSERT INTO research_map_versions(project_id,user_id,version,fingerprint,payload,created_at) VALUES(%s,%s,%s,%s,%s::jsonb,%s)", (research_map.project_id, user_id, research_map.version, research_map.context_fingerprint or "", payload, research_map.updated_at))
+    else:
+        with _sqlite_connection(database_url) as conn: conn.execute("INSERT INTO research_map_versions(project_id,user_id,version,fingerprint,payload,created_at) VALUES(?,?,?,?,?,?)", (research_map.project_id, user_id, research_map.version, research_map.context_fingerprint or "", payload, research_map.updated_at.isoformat()))
+    return research_map
 
 
 def save_user_run(*, user_id: str | None, run_type: str, state: WorkflowState, project_id: str | None = None) -> None:
@@ -238,6 +282,7 @@ def save_user_run(*, user_id: str | None, run_type: str, state: WorkflowState, p
                 )
                 _upsert_project_graph_postgres(conn, user_id, project_id, state.evidence_graph)
                 _save_project_materials(conn, True, user_id, project_id, state)
+                _save_generated_memo_version(conn, True, user_id, project_id, state)
                 conn.execute(
                     "UPDATE research_projects SET updated_at = %s WHERE project_id = %s AND user_id = %s",
                     (_now(), project_id, user_id),
@@ -261,6 +306,7 @@ def save_user_run(*, user_id: str | None, run_type: str, state: WorkflowState, p
             )
             _upsert_project_graph_sqlite(conn, user_id, project_id, state.evidence_graph)
             _save_project_materials(conn, False, user_id, project_id, state)
+            _save_generated_memo_version(conn, False, user_id, project_id, state)
             conn.execute(
                 "UPDATE research_projects SET updated_at = ? WHERE project_id = ? AND user_id = ?",
                 (_now().isoformat(), project_id, user_id),
@@ -291,6 +337,25 @@ def _save_project_materials(conn: Any, postgres: bool, user_id: str, project_id:
         conn.execute(sql, values)
 
 
+def _save_generated_memo_version(conn: Any, postgres: bool, user_id: str, project_id: str, state: WorkflowState) -> None:
+    if not state.memo:
+        return
+    placeholder = "%s" if postgres else "?"
+    exists = conn.execute(f"SELECT memo_version_id FROM memo_versions WHERE project_id={placeholder} AND source_run_id={placeholder}", (project_id, state.run_id)).fetchone()
+    if exists:
+        return
+    row = conn.execute(f"SELECT COALESCE(MAX(version),0) FROM memo_versions WHERE project_id={placeholder}", (project_id,)).fetchone()
+    gate_issues = []
+    if state.pre_memo_gate and state.pre_memo_gate.status == "fail": gate_issues.extend(state.pre_memo_gate.evidence_issues)
+    if state.post_memo_gate and state.post_memo_gate.status == "fail": gate_issues.extend(state.post_memo_gate.evidence_issues)
+    version = MemoVersion(project_id=project_id, version=int(row[0]) + 1, sections=state.memo.sections, source_run_id=state.run_id, created_by="ai", change_summary="AI分析生成初稿", gate_status="needs_evidence" if gate_issues else "draft", gate_issues=list(dict.fromkeys(gate_issues)), evidence_graph_version=state.evidence_graph.version)
+    payload = json.dumps(version.model_dump(mode="json"), ensure_ascii=False)
+    values = (version.memo_version_id, project_id, user_id, version.version, state.run_id, payload, version.created_at if postgres else version.created_at.isoformat())
+    sql = "INSERT INTO memo_versions(memo_version_id,project_id,user_id,version,source_run_id,payload,created_at) VALUES(" + ",".join([placeholder] * 7) + ")"
+    if postgres: sql = sql.replace(f"{placeholder},{placeholder})", f"{placeholder}::jsonb,{placeholder})")
+    conn.execute(sql, values)
+
+
 def list_project_materials(user_id: str, project_id: str) -> list[ProjectMaterial]:
     database_url = get_settings().database_url
     if _is_postgres_url(database_url):
@@ -303,8 +368,66 @@ def list_project_materials(user_id: str, project_id: str) -> list[ProjectMateria
     return [ProjectMaterial.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0]) for row in rows]
 
 
+def review_project_material_block(user_id: str, project_id: str, material_id: str, block_id: str, review: MaterialBlockReview) -> ProjectMaterial | None:
+    database_url = get_settings().database_url
+    postgres = _is_postgres_url(database_url)
+    if postgres:
+        import psycopg
+        with psycopg.connect(database_url) as conn:
+            row = conn.execute("SELECT payload FROM project_materials WHERE user_id=%s AND project_id=%s AND material_id=%s", (user_id, project_id, material_id)).fetchone()
+            if not row: return None
+            material = ProjectMaterial.model_validate(row[0])
+            block = next((item for item in material.blocks if item.block_id == block_id), None)
+            if not block: return None
+            block.review_status = "confirmed" if review.confirmed else "rejected"
+            block.review_note = review.note
+            block.requires_confirmation = False
+            conn.execute("UPDATE project_materials SET payload=%s::jsonb WHERE material_id=%s AND user_id=%s", (json.dumps(material.model_dump(mode="json"), ensure_ascii=False), material_id, user_id))
+            return material
+    with _sqlite_connection(database_url) as conn:
+        row = conn.execute("SELECT payload FROM project_materials WHERE user_id=? AND project_id=? AND material_id=?", (user_id, project_id, material_id)).fetchone()
+        if not row: return None
+        material = ProjectMaterial.model_validate(json.loads(row[0]))
+        block = next((item for item in material.blocks if item.block_id == block_id), None)
+        if not block: return None
+        block.review_status = "confirmed" if review.confirmed else "rejected"
+        block.review_note = review.note
+        block.requires_confirmation = False
+        conn.execute("UPDATE project_materials SET payload=? WHERE material_id=? AND user_id=?", (json.dumps(material.model_dump(mode="json"), ensure_ascii=False), material_id, user_id))
+    return material
+
+
+def review_evidence_for_material_block(user_id: str, project_id: str, block_id: str, confirmed: bool, note: str | None = None) -> EvidenceGraph | None:
+    graph = get_project_evidence_graph(user_id, project_id)
+    if graph is None:
+        return None
+    changed = False
+    for node in graph.nodes:
+        refs = node.metadata.get("source_refs", [])
+        if any(ref.get("block_id") == block_id for ref in refs if isinstance(ref, dict)):
+            node.verification_status = VerificationStatus.VERIFIED if confirmed else VerificationStatus.UNSUPPORTED
+            node.metadata["multimodal_review_note"] = note
+            changed = True
+    if not changed:
+        return graph
+    database_url = get_settings().database_url
+    payload = json.dumps(graph.model_dump(mode="json"), ensure_ascii=False)
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: conn.execute("UPDATE project_evidence_graphs SET payload=%s::jsonb,updated_at=%s WHERE project_id=%s AND user_id=%s", (payload, _now(), project_id, user_id))
+    else:
+        with _sqlite_connection(database_url) as conn: conn.execute("UPDATE project_evidence_graphs SET payload=?,updated_at=? WHERE project_id=? AND user_id=?", (payload, _now().isoformat(), project_id, user_id))
+    return graph
+
+
 def sync_defense_tasks(user_id: str, session: DefenseSession) -> list[ResearchTask]:
     tasks = [ResearchTask(project_id=session.project_id, title=f"补强{turn.role.value}答辩", detail=turn.feedback or "补充证据并重答", source_type="defense", source_id=turn.turn_id, evidence_ids=turn.answer_evidence_ids) for turn in session.turns if turn.passed is False]
+    return upsert_research_tasks(user_id, tasks, session.project_id)
+
+
+def upsert_research_tasks(user_id: str, tasks: list[ResearchTask], project_id: str) -> list[ResearchTask]:
+    existing = {task.source_id: task for task in list_research_tasks(user_id, project_id)}
+    tasks = [task for task in tasks if existing.get(task.source_id, task).status != "completed"]
     database_url = get_settings().database_url
     if _is_postgres_url(database_url):
         import psycopg
@@ -317,7 +440,7 @@ def sync_defense_tasks(user_id: str, session: DefenseSession) -> list[ResearchTa
             for task in tasks:
                 payload = json.dumps(task.model_dump(mode="json"), ensure_ascii=False)
                 conn.execute("INSERT INTO research_tasks(task_id,project_id,user_id,source_id,payload,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(project_id,source_id) DO UPDATE SET payload=excluded.payload", (task.task_id, task.project_id, user_id, task.source_id, payload, task.created_at.isoformat()))
-    return list_research_tasks(user_id, session.project_id)
+    return list_research_tasks(user_id, project_id)
 
 
 def list_research_tasks(user_id: str, project_id: str) -> list[ResearchTask]:
@@ -330,11 +453,59 @@ def list_research_tasks(user_id: str, project_id: str) -> list[ResearchTask]:
     return [ResearchTask.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0]) for row in rows]
 
 
+def update_research_task(user_id: str, project_id: str, task_id: str, request: ResearchTaskUpdate) -> ResearchTask | None:
+    task = next((item for item in list_research_tasks(user_id, project_id) if item.task_id == task_id), None)
+    if not task or request.status not in {"open", "completed"}:
+        return None
+    if request.status == "completed":
+        graph = get_project_evidence_graph(user_id, project_id) or EvidenceGraph()
+        verified = {node.evidence_id for node in graph.nodes if node.evidence_id and node.verification_status == VerificationStatus.VERIFIED}
+        if not request.evidence_ids or not set(request.evidence_ids).issubset(verified):
+            raise ValueError("完成研究任务必须引用至少一条已确认的证据")
+        task.completion_evidence_ids = request.evidence_ids
+        task.completed_at = _now()
+    else:
+        task.completion_evidence_ids = []
+        task.completed_at = None
+    task.status = request.status
+    task.updated_at = _now()
+    database_url = get_settings().database_url
+    payload = json.dumps(task.model_dump(mode="json"), ensure_ascii=False)
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: conn.execute("UPDATE research_tasks SET payload=%s::jsonb WHERE task_id=%s AND user_id=%s AND project_id=%s", (payload, task_id, user_id, project_id))
+    else:
+        with _sqlite_connection(database_url) as conn: conn.execute("UPDATE research_tasks SET payload=? WHERE task_id=? AND user_id=? AND project_id=?", (payload, task_id, user_id, project_id))
+    return task
+
+
+def record_behavior_event(event: ResearchBehaviorEvent) -> ResearchBehaviorEvent:
+    database_url = get_settings().database_url
+    payload = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: conn.execute("INSERT INTO research_behavior_events(event_id,user_id,project_id,action,dimension,payload,created_at) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s)", (event.event_id, event.user_id, event.project_id, event.action, event.dimension, payload, event.created_at))
+    else:
+        with _sqlite_connection(database_url) as conn: conn.execute("INSERT INTO research_behavior_events(event_id,user_id,project_id,action,dimension,payload,created_at) VALUES(?,?,?,?,?,?,?)", (event.event_id, event.user_id, event.project_id, event.action, event.dimension, payload, event.created_at.isoformat()))
+    return event
+
+
+def list_behavior_events(user_id: str, limit: int = 1000) -> list[ResearchBehaviorEvent]:
+    database_url = get_settings().database_url
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: rows = conn.execute("SELECT payload FROM research_behavior_events WHERE user_id=%s ORDER BY created_at ASC LIMIT %s", (user_id, limit)).fetchall()
+    else:
+        with _sqlite_connection(database_url) as conn: rows = conn.execute("SELECT payload FROM research_behavior_events WHERE user_id=? ORDER BY created_at ASC LIMIT ?", (user_id, limit)).fetchall()
+    return [ResearchBehaviorEvent.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0]) for row in rows]
+
+
 def _upsert_project_graph_postgres(conn: Any, user_id: str, project_id: str, incoming: EvidenceGraph) -> None:
     from .evidence_graph import merge_evidence_graphs
     row = conn.execute("SELECT payload FROM project_evidence_graphs WHERE project_id=%s AND user_id=%s", (project_id, user_id)).fetchone()
     existing = EvidenceGraph.model_validate(row[0]) if row else None
     graph = merge_evidence_graphs(existing, incoming)
+    conn.execute("INSERT INTO evidence_graph_versions(project_id,user_id,version,payload,created_at) VALUES(%s,%s,%s,%s::jsonb,%s) ON CONFLICT(project_id,version) DO NOTHING", (project_id, user_id, graph.version, json.dumps(graph.model_dump(mode="json"), ensure_ascii=False), _now()))
     conn.execute("""INSERT INTO project_evidence_graphs(project_id,user_id,payload,updated_at) VALUES(%s,%s,%s::jsonb,%s)
         ON CONFLICT(project_id) DO UPDATE SET payload=EXCLUDED.payload,updated_at=EXCLUDED.updated_at""", (project_id, user_id, json.dumps(graph.model_dump(mode="json"), ensure_ascii=False), _now()))
 
@@ -344,6 +515,7 @@ def _upsert_project_graph_sqlite(conn: sqlite3.Connection, user_id: str, project
     row = conn.execute("SELECT payload FROM project_evidence_graphs WHERE project_id=? AND user_id=?", (project_id, user_id)).fetchone()
     existing = EvidenceGraph.model_validate(json.loads(row[0])) if row else None
     graph = merge_evidence_graphs(existing, incoming)
+    conn.execute("INSERT OR IGNORE INTO evidence_graph_versions(project_id,user_id,version,payload,created_at) VALUES(?,?,?,?,?)", (project_id, user_id, graph.version, json.dumps(graph.model_dump(mode="json"), ensure_ascii=False), _now().isoformat()))
     conn.execute("INSERT OR REPLACE INTO project_evidence_graphs(project_id,user_id,payload,updated_at) VALUES(?,?,?,?)", (project_id, user_id, json.dumps(graph.model_dump(mode="json"), ensure_ascii=False), _now().isoformat()))
 
 
@@ -362,6 +534,16 @@ def get_project_evidence_graph(user_id: str, project_id: str) -> EvidenceGraph |
     return EvidenceGraph.model_validate(json.loads(payload) if isinstance(payload, str) else payload)
 
 
+def list_evidence_graph_versions(user_id: str, project_id: str) -> list[EvidenceGraph]:
+    database_url = get_settings().database_url
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: rows = conn.execute("SELECT payload FROM evidence_graph_versions WHERE user_id=%s AND project_id=%s ORDER BY version", (user_id, project_id)).fetchall()
+    else:
+        with _sqlite_connection(database_url) as conn: rows = conn.execute("SELECT payload FROM evidence_graph_versions WHERE user_id=? AND project_id=? ORDER BY version", (user_id, project_id)).fetchall()
+    return [EvidenceGraph.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0]) for row in rows]
+
+
 def review_project_evidence_node(user_id: str, project_id: str, node_id: str, review: EvidenceNodeReview) -> EvidenceGraph | None:
     graph = get_project_evidence_graph(user_id, project_id)
     if graph is None:
@@ -375,15 +557,40 @@ def review_project_evidence_node(user_id: str, project_id: str, node_id: str, re
             break
     if not matched:
         return None
+    return _persist_reviewed_graph(user_id, project_id, graph, f"用户复核证据节点 {node_id}")
+
+
+def review_project_evidence_edge(user_id: str, project_id: str, edge_id: str, review: EvidenceEdgeReview) -> EvidenceGraph | None:
+    graph = get_project_evidence_graph(user_id, project_id)
+    if graph is None:
+        return None
+    edge = next((item for item in graph.edges if item.edge_id == edge_id), None)
+    if edge is None:
+        return None
+    edge.relation = review.relation
+    edge.confidence = Confidence.HIGH
+    edge.relation_source = "user_review"
+    edge.reviewed_by_user = True
+    edge.user_review_note = review.note
+    return _persist_reviewed_graph(user_id, project_id, graph, f"用户修正证据关系 {edge_id}")
+
+
+def _persist_reviewed_graph(user_id: str, project_id: str, graph: EvidenceGraph, summary: str) -> EvidenceGraph:
+    graph.parent_version = graph.version
+    graph.version += 1
+    graph.change_summary = summary
+    graph.updated_at = _now()
     database_url = get_settings().database_url
     payload = json.dumps(graph.model_dump(mode="json"), ensure_ascii=False)
     if _is_postgres_url(database_url):
         import psycopg
         with psycopg.connect(database_url) as conn:
             conn.execute("UPDATE project_evidence_graphs SET payload=%s::jsonb,updated_at=%s WHERE project_id=%s AND user_id=%s", (payload, _now(), project_id, user_id))
+            conn.execute("INSERT INTO evidence_graph_versions(project_id,user_id,version,payload,created_at) VALUES(%s,%s,%s,%s::jsonb,%s) ON CONFLICT(project_id,version) DO UPDATE SET payload=EXCLUDED.payload", (project_id, user_id, graph.version, payload, _now()))
     else:
         with _sqlite_connection(database_url) as conn:
             conn.execute("UPDATE project_evidence_graphs SET payload=?,updated_at=? WHERE project_id=? AND user_id=?", (payload, _now().isoformat(), project_id, user_id))
+            conn.execute("INSERT OR REPLACE INTO evidence_graph_versions(project_id,user_id,version,payload,created_at) VALUES(?,?,?,?,?)", (project_id, user_id, graph.version, payload, _now().isoformat()))
     return graph
 
 
@@ -559,6 +766,61 @@ def list_thesis_versions(user_id: str, project_id: str) -> list[ThesisVersion]:
         with _sqlite_connection(database_url) as conn:
             rows = conn.execute("SELECT payload FROM thesis_versions WHERE user_id=? AND project_id=? ORDER BY version ASC", (user_id, project_id)).fetchall()
     return [ThesisVersion.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0]) for row in rows]
+
+
+def list_memo_versions(user_id: str, project_id: str) -> list[MemoVersion]:
+    database_url = get_settings().database_url
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: rows = conn.execute("SELECT payload FROM memo_versions WHERE user_id=%s AND project_id=%s ORDER BY version ASC", (user_id, project_id)).fetchall()
+    else:
+        with _sqlite_connection(database_url) as conn: rows = conn.execute("SELECT payload FROM memo_versions WHERE user_id=? AND project_id=? ORDER BY version ASC", (user_id, project_id)).fetchall()
+    return [MemoVersion.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0]) for row in rows]
+
+
+def save_memo_version(user_id: str, project_id: str, request: MemoVersionCreate) -> MemoVersion:
+    from .memo_coauthor import assess_memo_sections
+    if not project_belongs_to_user(user_id, project_id):
+        raise ValueError("project not found")
+    graph = get_project_evidence_graph(user_id, project_id) or EvidenceGraph()
+    gate_status, issues = assess_memo_sections(request.sections, graph, request.request_formal)
+    history = list_memo_versions(user_id, project_id)
+    version = MemoVersion(project_id=project_id, version=len(history) + 1, sections=request.sections, created_by="user", change_summary=request.change_summary, gate_status=gate_status, gate_issues=issues, evidence_graph_version=graph.version)
+    _persist_memo_version(user_id, version)
+    return version
+
+
+def update_memo_suggestions(user_id: str, version: MemoVersion, suggestions: list[MemoSuggestion]) -> MemoVersion:
+    version.suggestions = suggestions
+    database_url = get_settings().database_url
+    payload = json.dumps(version.model_dump(mode="json"), ensure_ascii=False)
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: conn.execute("UPDATE memo_versions SET payload=%s::jsonb WHERE memo_version_id=%s AND user_id=%s", (payload, version.memo_version_id, user_id))
+    else:
+        with _sqlite_connection(database_url) as conn: conn.execute("UPDATE memo_versions SET payload=? WHERE memo_version_id=? AND user_id=?", (payload, version.memo_version_id, user_id))
+    return version
+
+
+def decide_memo_suggestion(user_id: str, project_id: str, memo_version_id: str, suggestion_id: str, status: str) -> MemoVersion | None:
+    if status not in {"accepted", "rejected"}: return None
+    version = next((item for item in list_memo_versions(user_id, project_id) if item.memo_version_id == memo_version_id), None)
+    if not version: return None
+    suggestion = next((item for item in version.suggestions if item.suggestion_id == suggestion_id), None)
+    if not suggestion: return None
+    suggestion.status = status
+    return update_memo_suggestions(user_id, version, version.suggestions)
+
+
+def _persist_memo_version(user_id: str, version: MemoVersion) -> None:
+    database_url = get_settings().database_url
+    payload = json.dumps(version.model_dump(mode="json"), ensure_ascii=False)
+    values = (version.memo_version_id, version.project_id, user_id, version.version, version.source_run_id, payload, version.created_at)
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: conn.execute("INSERT INTO memo_versions(memo_version_id,project_id,user_id,version,source_run_id,payload,created_at) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s)", values)
+    else:
+        with _sqlite_connection(database_url) as conn: conn.execute("INSERT INTO memo_versions(memo_version_id,project_id,user_id,version,source_run_id,payload,created_at) VALUES(?,?,?,?,?,?,?)", (*values[:-1], version.created_at.isoformat()))
 
 
 def save_defense_session(user_id: str, session: DefenseSession) -> DefenseSession:

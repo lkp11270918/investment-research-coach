@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
-from .models import CapabilityDimension, CapabilityProfile, Confidence, DefenseSession, ResearchRunDetail, ThesisVersion
+from .models import CapabilityDimension, CapabilityProfile, Confidence, DefenseSession, ResearchBehaviorEvent, ResearchRunDetail, ThesisVersion
 
 
 DIMENSIONS = ["financial_analysis", "business_model", "valuation", "evidence_awareness", "counter_evidence", "management_analysis", "industry_understanding", "memo_writing", "defense"]
@@ -11,11 +11,12 @@ ROLE_DIMENSION = {"portfolio_manager": "valuation", "investment_director": "busi
 REVIEW_DIMENSION = {"evidence_gap": "evidence_awareness", "unsupported_claim": "evidence_awareness", "sell_side_repetition": "management_analysis", "value_trap_omission": "counter_evidence", "doctrine_mismatch": "valuation", "rewrite_guidance": "memo_writing"}
 
 
-def build_capability_profile(user_id: str, runs: list[ResearchRunDetail], theses: list[ThesisVersion], defenses: list[DefenseSession]) -> CapabilityProfile:
+def build_capability_profile(user_id: str, runs: list[ResearchRunDetail], theses: list[ThesisVersion], defenses: list[DefenseSession], behavior_events: list[ResearchBehaviorEvent] | None = None) -> CapabilityProfile:
     scores: dict[str, list[float]] = defaultdict(list)
     evidence: dict[str, list[str]] = defaultdict(list)
     errors: dict[str, Counter[str]] = defaultdict(Counter)
-    events = [(item.created_at, "thesis", item) for item in theses] + [(item.created_at, "defense", item) for item in defenses] + [(item.summary.created_at, "run", item) for item in runs]
+    error_projects: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    events = [(item.created_at, "thesis", item) for item in theses] + [(item.created_at, "defense", item) for item in defenses] + [(item.summary.created_at, "run", item) for item in runs] + [(item.created_at, "behavior", item) for item in (behavior_events or [])]
     for _, kind, event in sorted(events, key=lambda item: item[0]):
         if kind == "defense":
             defense = event
@@ -37,7 +38,7 @@ def build_capability_profile(user_id: str, runs: list[ResearchRunDetail], theses
             for issue in thesis.assessment.issues:
                 dimension = "counter_evidence" if "反证" in issue or "推翻" in issue else "evidence_awareness"
                 errors[dimension][issue] += 1
-        else:
+        elif kind == "run":
             run = event
             review = run.state.agent_outputs.get("research_coach_review")
             if not review: continue
@@ -48,11 +49,20 @@ def build_capability_profile(user_id: str, runs: list[ResearchRunDetail], theses
                     scores[dimension].append(penalty_score)
                     evidence[dimension].append(f"Review {run.summary.run_id}：{finding.title}")
                     if penalty_score < 60: errors[dimension][finding.title] += 1
+        else:
+            behavior = event
+            if behavior.dimension not in DIMENSIONS or behavior.score is None: continue
+            scores[behavior.dimension].append(behavior.score)
+            evidence[behavior.dimension].append(f"行为 {behavior.event_id}：{behavior.action} / {behavior.outcome} / {behavior.score:.0f}分")
+            error_code = str(behavior.metadata.get("error_code") or "")
+            if error_code and behavior.project_id:
+                errors[behavior.dimension][error_code] += 1
+                error_projects[behavior.dimension][error_code].add(behavior.project_id)
     dimensions: list[CapabilityDimension] = []
     for dimension in DIMENSIONS:
         values = scores[dimension]
         score = round(sum(values) / len(values), 1) if values else None
-        repeated = [message for message, count in errors[dimension].items() if count >= 2]
+        repeated = [message for message, count in errors[dimension].items() if count >= 2 and (not error_projects[dimension].get(message) or len(error_projects[dimension][message]) >= 3)]
         trend, change = _trend(values)
         confidence = Confidence.HIGH if len(values) >= 5 else Confidence.MEDIUM if len(values) >= 2 else Confidence.LOW
         dimensions.append(CapabilityDimension(dimension=dimension, score=score, evidence=evidence[dimension][-5:], repeated_errors=repeated, sample_count=len(values), confidence=confidence, trend=trend, change=change))
@@ -63,7 +73,7 @@ def build_capability_profile(user_id: str, runs: list[ResearchRunDetail], theses
     tasks = [f"完成一次针对 {item.dimension} 的补证据与答辩训练" for item in weak]
     if not measured:
         tasks = ["完成首个研究项目、Thesis和答辩后生成可信能力基线"]
-    return CapabilityProfile(user_id=user_id, dimensions=dimensions, strengths=strengths, priorities=priorities, recommended_tasks=tasks, sample_count=len(runs) + len(theses) + len(defenses))
+    return CapabilityProfile(user_id=user_id, dimensions=dimensions, strengths=strengths, priorities=priorities, recommended_tasks=tasks, sample_count=len(runs) + len(theses) + len(defenses) + len(behavior_events or []))
 
 
 def _trend(values: list[float]) -> tuple[str, float | None]:

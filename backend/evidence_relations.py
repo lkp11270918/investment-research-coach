@@ -4,6 +4,8 @@ import re
 from itertools import combinations
 
 from .models import Confidence, EvidenceGraphEdge, EvidenceGraphNode, EvidenceRelation
+from .llm_client import LLMError, OpenAIClient
+from .model_pipeline import semantic_rerank
 
 
 NEGATIVE_CUES = ("下降", "恶化", "承压", "不及", "低于", "减少", "收缩", "亏损", "风险", "无法", "未能", "不成立")
@@ -21,8 +23,61 @@ def infer_semantic_edges(nodes: list[EvidenceGraphNode]) -> list[EvidenceGraphEd
             continue
         relation, confidence = _relation(left, right, similarity)
         if relation:
-            edges.append(EvidenceGraphEdge(from_node_id=left.node_id, to_node_id=right.node_id, relation=relation, rationale=f"语义关系：共同主题相似度 {similarity:.2f}", confidence=confidence))
+            edges.append(EvidenceGraphEdge(from_node_id=left.node_id, to_node_id=right.node_id, relation=relation, rationale=f"启发式语义关系：共同主题相似度 {similarity:.2f}", confidence=confidence, relation_source="heuristic_fallback"))
     return edges
+
+
+def infer_semantic_edges_nli(nodes: list[EvidenceGraphNode], client: OpenAIClient | None) -> list[EvidenceGraphEdge]:
+    fallback = infer_semantic_edges(nodes)
+    if not client or not client.available:
+        return fallback
+    node_by_id = {node.node_id: node for node in nodes}
+    candidates = _embedding_candidates(nodes, client) or fallback[:120]
+    if not candidates:
+        return fallback
+    try:
+        result = client.generate_json(
+            model=client.settings.openai_nli_model,
+            system_prompt="你是证据关系NLI分类器。判断两段陈述是supports、contradicts、depends_on、questioned_by还是irrelevant。只判断语义关系，不做投资结论。返回JSON：{\"relations\":[{\"index\":0,\"relation\":\"supports\",\"confidence\":\"high\",\"rationale\":\"...\"}]}。不确定时必须返回irrelevant。",
+            user_payload={"pairs": [{"index": index, "left": node_by_id[edge.from_node_id].label, "right": node_by_id[edge.to_node_id].label} for index, edge in enumerate(candidates)]},
+            temperature=0,
+        )
+    except LLMError:
+        return fallback
+    allowed = {item.value: item for item in (EvidenceRelation.SUPPORTS, EvidenceRelation.CONTRADICTS, EvidenceRelation.DEPENDS_ON, EvidenceRelation.QUESTIONED_BY)}
+    confidence_map = {"high": Confidence.HIGH, "medium": Confidence.MEDIUM, "low": Confidence.LOW}
+    edges: list[EvidenceGraphEdge] = []
+    for raw in result.get("relations", []):
+        try:
+            candidate = candidates[int(raw["index"])]
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        relation = allowed.get(str(raw.get("relation", "")).lower())
+        if relation is None:
+            continue
+        edges.append(EvidenceGraphEdge(from_node_id=candidate.from_node_id, to_node_id=candidate.to_node_id, relation=relation, rationale=str(raw.get("rationale") or "NLI语义判断"), confidence=confidence_map.get(str(raw.get("confidence", "")).lower(), Confidence.MEDIUM), relation_source="nli_model", model_name=client.settings.openai_nli_model))
+    return edges or fallback
+
+
+def _embedding_candidates(nodes: list[EvidenceGraphNode], client: OpenAIClient) -> list[EvidenceGraphEdge]:
+    candidates = [node for node in nodes if node.node_type != "source" and node.label.strip()][:160]
+    if len(candidates) < 2:
+        return []
+    try:
+        vectors, _ = client.embed([node.label for node in candidates], model=client.settings.openai_embedding_model)
+    except (LLMError, AttributeError):
+        return []
+    scored: list[tuple[float, int, int]] = []
+    for left in range(len(candidates)):
+        for right in range(left + 1, len(candidates)):
+            score = sum(a * b for a, b in zip(vectors[left], vectors[right]))
+            if score >= 0.45:
+                scored.append((score, left, right))
+    raw = [(score, left, right) for score, left, right in sorted(scored, reverse=True)[:120]]
+    pair_texts = [f"证据A：{candidates[left].label}\n证据B：{candidates[right].label}" for _, left, right in raw]
+    order, reranker = semantic_rerank("筛选存在直接支持、反驳、依赖或质疑关系的证据对；排除仅措辞相似的组合", pair_texts, client)
+    selected = [raw[index] for index in order[:60] if index < len(raw)]
+    return [EvidenceGraphEdge(from_node_id=candidates[left].node_id, to_node_id=candidates[right].node_id, relation=EvidenceRelation.MENTIONS, rationale=f"Embedding候选相似度 {score:.2f}；经独立Reranker筛选", confidence=Confidence.MEDIUM, relation_source="embedding_reranked_candidate", model_name=reranker) for score, left, right in selected]
 
 
 def _relation(left: EvidenceGraphNode, right: EvidenceGraphNode, similarity: float) -> tuple[EvidenceRelation | None, Confidence]:

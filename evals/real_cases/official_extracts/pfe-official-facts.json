@@ -1,0 +1,71 @@
+{
+  "entityName": "Pfizer Inc.",
+  "cik": 78003,
+  "facts": [
+    {
+      "tag": "Revenues",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-26",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "val": 62579000000,
+      "accn": "0000078003-26-000026",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-26",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "val": 7771000000,
+      "accn": "0000078003-26-000026",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-26",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "val": 11704000000,
+      "accn": "0000078003-26-000026",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "Assets",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-26",
+      "start": null,
+      "end": "2025-12-31",
+      "val": 208160000000,
+      "accn": "0000078003-26-000026",
+      "frame": null
+    },
+    {
+      "tag": "Liabilities",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-26",
+      "start": null,
+      "end": "2025-12-31",
+      "val": 121385000000,
+      "accn": "0000078003-26-000026",
+      "frame": null
+    }
+  ]
+}

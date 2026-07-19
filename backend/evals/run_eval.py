@@ -53,7 +53,17 @@ def run_suite() -> dict:
     sample_counts = {metric: sum(result.metric == metric for result in results) for metric in metric_scores}
     provisional = [metric for metric, count in sample_counts.items() if count < 5]
     passed = not provisional and all(metric_scores[name] >= threshold for name, threshold in thresholds.items())
-    return {"suite": "value_investing_research_coach_prd", "passed": passed, "metrics": metric_scores, "sample_counts": sample_counts, "provisional_metrics": provisional, "thresholds": thresholds, "cases": [result.__dict__ for result in results]}
+    return {
+        "suite": "value_investing_research_coach_synthetic_regression",
+        "evidence_level": "synthetic_regression",
+        "release_eligible": False,
+        "passed": passed,
+        "metrics": metric_scores,
+        "sample_counts": sample_counts,
+        "provisional_metrics": provisional,
+        "thresholds": thresholds,
+        "cases": [result.__dict__ for result in results],
+    }
 
 
 def _financial_cases() -> list[CaseResult]:
@@ -146,7 +156,7 @@ def _sell_side_repetition_cases() -> list[CaseResult]:
     results = []
     for index, view in enumerate(("增长提速", "估值低估", "需求反转", "利润改善", "行业见底"), start=1):
         evidence_id = f"S{index}"
-        graph = EvidenceGraph(nodes=[EvidenceGraphNode(node_id=f"EVIDENCE:{evidence_id}", node_type="sell_side_opinion", label="卖方", evidence_id=evidence_id)])
+        graph = EvidenceGraph(nodes=[EvidenceGraphNode(node_id=f"EVIDENCE:{evidence_id}", node_type="sell_side_opinion", label="卖方", evidence_id=evidence_id, verification_status=VerificationStatus.VERIFIED)])
         assessment = assess_thesis(ThesisDraft(core_view=view, supporting_evidence_ids=[evidence_id]), graph)
         results.append(CaseResult(f"sell_side_only_thesis_{index}", "sell_side_repetition_rate", assessment.sell_side_repetition_risk, str(assessment.issues)))
     return results

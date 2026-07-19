@@ -46,6 +46,64 @@ class ModelExecutionRecord(BaseModel):
     input_count: int = 0
     output_count: int = 0
     status: str = "completed"
+    provider: str | None = None
+    model_name: str | None = None
+    latency_ms: int | None = None
+    fallback_reason: str | None = None
+
+
+class ModelUsageRecord(BaseModel):
+    model_name: str
+    endpoint: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    latency_ms: int = 0
+
+
+class FinancialCalculationRecord(BaseModel):
+    calculation_id: str = Field(default_factory=lambda: f"CALC-{uuid4().hex[:10]}")
+    metric_name: str
+    period: str | None = None
+    value: float | None = None
+    unit: str | None = None
+    formula: str
+    input_evidence_ids: list[str] = Field(default_factory=list)
+    status: str = "completed"
+    error: str | None = None
+
+class FinancialAnomaly(BaseModel):
+    anomaly_id: str = Field(default_factory=lambda: f"ANOM-{uuid4().hex[:10]}")
+    anomaly_type: str
+    severity: str
+    period: str | None = None
+    description: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    verification_question: str
+
+class ValuationScenarioResult(BaseModel):
+    name: str
+    assumptions: dict[str, float] = Field(default_factory=dict)
+    estimated_value_per_share: float | None = None
+    margin_of_safety_percent: float | None = None
+
+class ValuationAnalysis(BaseModel):
+    status: str = "insufficient_data"
+    market_price: float | None = None
+    multiples: dict[str, float] = Field(default_factory=dict)
+    reverse_assumptions: list[str] = Field(default_factory=list)
+    scenarios: list[ValuationScenarioResult] = Field(default_factory=list)
+    missing_inputs: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    conclusion: str = "资料不足，不能形成安全边际判断"
+
+class EvidenceGraphQuality(BaseModel):
+    score: float = 0
+    traceability_rate: float = 0
+    verified_rate: float = 0
+    relation_coverage: float = 0
+    unresolved_conflicts: int = 0
+    issues: list[str] = Field(default_factory=list)
 
 
 class EvidenceCategory(str, Enum):
@@ -96,17 +154,30 @@ class EvidenceGraphEdge(BaseModel):
     relation: EvidenceRelation
     rationale: str | None = None
     confidence: Confidence = Confidence.LOW
+    relation_source: str = "deterministic"
+    model_name: str | None = None
+    reviewed_by_user: bool = False
+    user_review_note: str | None = None
 
 
 class EvidenceGraph(BaseModel):
+    version: int = 1
+    parent_version: int | None = None
     nodes: list[EvidenceGraphNode] = Field(default_factory=list)
     edges: list[EvidenceGraphEdge] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
+    change_summary: str | None = None
+    removed_node_ids: list[str] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class EvidenceNodeReview(BaseModel):
     verification_status: VerificationStatus
+    note: str | None = None
+
+
+class EvidenceEdgeReview(BaseModel):
+    relation: EvidenceRelation
     note: str | None = None
 
 
@@ -127,13 +198,22 @@ class ResearchQuestion(BaseModel):
     missing_materials: list[str] = Field(default_factory=list)
     rationale: str | None = None
     required_evidence_types: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
+    generated_from: str = "framework"
+    change_reason: str | None = None
 
 
 class ResearchMap(BaseModel):
     project_id: str
     industry: str
+    version: int = 1
     questions: list[ResearchQuestion] = Field(default_factory=list)
     next_questions: list[str] = Field(default_factory=list)
+    core_variables: list[str] = Field(default_factory=list)
+    material_requests: list[str] = Field(default_factory=list)
+    planner_model: str = "deterministic_framework"
+    context_fingerprint: str | None = None
+    change_summary: str | None = None
     completion_rate: float = 0
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -180,6 +260,7 @@ class ThesisVersion(BaseModel):
     version: int
     draft: ThesisDraft
     assessment: ThesisAssessment
+    evidence_graph_version: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -213,6 +294,9 @@ class DefenseSession(BaseModel):
     turns: list[DefenseTurn] = Field(default_factory=list)
     overall_score: float | None = None
     improvement_tasks: list[str] = Field(default_factory=list)
+    question_model: str = "deterministic"
+    targeted_gaps: list[str] = Field(default_factory=list)
+    question_bank: list[DefenseTurn] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -227,6 +311,28 @@ class ResearchTask(BaseModel):
     priority: int = 1
     status: str = "open"
     evidence_ids: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    completion_evidence_ids: list[str] = Field(default_factory=list)
+    completed_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ResearchTaskUpdate(BaseModel):
+    status: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ResearchBehaviorEvent(BaseModel):
+    event_id: str = Field(default_factory=lambda: f"EVENT-{uuid4().hex[:12]}")
+    user_id: str
+    project_id: str | None = None
+    action: str
+    dimension: str
+    outcome: str
+    score: float | None = None
+    object_type: str | None = None
+    object_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -294,6 +400,10 @@ class ContentBlock(BaseModel):
     end_seconds: float | None = None
     extraction_method: str = "deterministic"
     requires_confirmation: bool = False
+    review_status: str = "pending"
+    review_note: str | None = None
+    cross_check_status: str = "not_applicable"
+    cross_check_matches: list[str] = Field(default_factory=list)
 
 
 class WorkflowStopAfter(str, Enum):
@@ -363,6 +473,18 @@ class RawMaterial(BaseModel):
     modality: MaterialModality = MaterialModality.TEXT
     blocks: list[ContentBlock] = Field(default_factory=list)
     parse_warnings: list[str] = Field(default_factory=list)
+    classification_model: str | None = None
+    classification_confidence: float | None = None
+
+
+class UrlIngestRequest(BaseModel):
+    url: str
+    source_type: SourceType = SourceType.NEWS_SUMMARY
+
+
+class MaterialBlockReview(BaseModel):
+    confirmed: bool
+    note: str | None = None
 
 
 class SourceDocument(BaseModel):
@@ -393,6 +515,12 @@ class SourceRef(BaseModel):
     row_id: str | None = None
     cell_range: str | None = None
     url: str | None = None
+    block_id: str | None = None
+    region: dict[str, float] | None = None
+    start_seconds: float | None = None
+    end_seconds: float | None = None
+    extraction_method: str | None = None
+    requires_confirmation: bool = False
 
 
 class EvidenceItem(BaseModel):
@@ -407,6 +535,9 @@ class EvidenceItem(BaseModel):
     confidence: Confidence = Confidence.LOW
     verification_status: VerificationStatus = VerificationStatus.TO_BE_VERIFIED
     notes: str | None = None
+    classification_model: str | None = None
+    classification_confidence: float | None = None
+    semantic_neighbor_ids: list[str] = Field(default_factory=list)
 
 
 class AgentFinding(BaseModel):
@@ -426,6 +557,35 @@ class AgentOutput(BaseModel):
     missing_materials: list[str] = Field(default_factory=list)
     confidence: Confidence = Confidence.LOW
     warnings: list[str] = Field(default_factory=list)
+
+
+class ViewComparisonPoint(BaseModel):
+    point_type: str
+    topic: str
+    detail: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list)
+    assumption_difference: str | None = None
+    buyer_verification_question: str | None = None
+
+
+class RedTeamChallenge(BaseModel):
+    challenge_id: str = Field(default_factory=lambda: f"RTC-{uuid4().hex[:10]}")
+    title: str
+    mechanism: str
+    severity: str = "medium"
+    evidence_ids: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+    falsification_test: str
+    status: str = "open"
+
+
+class ResearchJudgment(BaseModel):
+    view_points: list[ViewComparisonPoint] = Field(default_factory=list)
+    red_team_challenges: list[RedTeamChallenge] = Field(default_factory=list)
+    sell_side_source_count: int = 0
+    independent_fact_count: int = 0
+    unresolved_critical_count: int = 0
 
 
 class DowngradedClaim(BaseModel):
@@ -463,6 +623,40 @@ class ResearchMemo(BaseModel):
     markdown: str | None = None
 
 
+class MemoSuggestion(BaseModel):
+    suggestion_id: str = Field(default_factory=lambda: f"SUG-{uuid4().hex[:10]}")
+    section_id: str
+    proposed_body: str
+    rationale: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    status: str = "pending"
+
+
+class MemoVersionCreate(BaseModel):
+    sections: list[MemoSection]
+    change_summary: str | None = None
+    request_formal: bool = False
+
+
+class MemoVersion(BaseModel):
+    memo_version_id: str = Field(default_factory=lambda: f"MEMOV-{uuid4().hex[:10]}")
+    project_id: str
+    version: int
+    sections: list[MemoSection]
+    source_run_id: str | None = None
+    created_by: str = "user"
+    change_summary: str | None = None
+    gate_status: str = "draft"
+    gate_issues: list[str] = Field(default_factory=list)
+    suggestions: list[MemoSuggestion] = Field(default_factory=list)
+    evidence_graph_version: int | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MemoSuggestionDecision(BaseModel):
+    status: str
+
+
 class AnalyzeRequest(BaseModel):
     project_id: str | None = None
     company_profile: CompanyProfile
@@ -486,6 +680,12 @@ class WorkflowState(BaseModel):
     evidence_graph: EvidenceGraph = Field(default_factory=EvidenceGraph)
     agent_outputs: dict[str, AgentOutput] = Field(default_factory=dict)
     processing_records: list[ModelExecutionRecord] = Field(default_factory=list)
+    model_usage: list[ModelUsageRecord] = Field(default_factory=list)
+    financial_calculations: list[FinancialCalculationRecord] = Field(default_factory=list)
+    financial_anomalies: list[FinancialAnomaly] = Field(default_factory=list)
+    valuation_analysis: ValuationAnalysis = Field(default_factory=ValuationAnalysis)
+    evidence_graph_quality: EvidenceGraphQuality = Field(default_factory=EvidenceGraphQuality)
+    research_judgment: ResearchJudgment = Field(default_factory=ResearchJudgment)
     pre_memo_gate: ComplianceGateOutput | None = None
     post_memo_gate: ComplianceGateOutput | None = None
     memo: ResearchMemo | None = None

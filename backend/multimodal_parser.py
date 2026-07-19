@@ -28,7 +28,7 @@ def parse_image(filename: str, data: bytes) -> tuple[str, list[ContentBlock], li
                 {"type": "input_text", "text": (
                     "识别这张投研图片中的标题、图表含义、坐标轴、年份、指标、可见数值和注释。"
                     "严格区分图中可见内容与推断。返回JSON："
-                    '{"visible_text":"...","chart_summary":"...","visible_data":["..."],"inferences":["..."]}'
+                    '{"visible_text":"...","chart_summary":"...","visible_data":[{"text":"...","region":{"x":0.0,"y":0.0,"width":0.0,"height":0.0}}],"inferences":[{"text":"...","region":{"x":0.0,"y":0.0,"width":0.0,"height":0.0}}]}'
                 )},
                 {"type": "input_image", "image_url": f"data:{media_type};base64,{base64.b64encode(data).decode('ascii')}"},
             ],
@@ -38,12 +38,17 @@ def parse_image(filename: str, data: bytes) -> tuple[str, list[ContentBlock], li
     payload = _request_json(f"{settings.openai_base_url.rstrip('/')}/responses", body, settings.openai_api_key, settings.llm_timeout_seconds)
     text = _response_text(payload)
     parsed = _extract_json(text)
-    visible = "\n".join(filter(None, [parsed.get("visible_text"), parsed.get("chart_summary"), *parsed.get("visible_data", [])]))
+    visible_items = [_visual_item(item) for item in parsed.get("visible_data", [])]
+    visible = "\n".join(filter(None, [parsed.get("visible_text"), parsed.get("chart_summary"), *(item[0] for item in visible_items)]))
     inferences = parsed.get("inferences", [])
-    blocks = [ContentBlock(modality=MaterialModality.IMAGE, content=visible, extraction_method="vision_model")]
-    if inferences:
-        blocks.append(ContentBlock(modality=MaterialModality.IMAGE, content="；".join(inferences), extraction_method="vision_inference", requires_confirmation=True))
-    warnings = ["图片中的模型推断已单独标记，使用前需要用户确认。"] if inferences else []
+    blocks = [ContentBlock(modality=MaterialModality.IMAGE, content=text, region=region, extraction_method="vision_visible_data", requires_confirmation=True) for text, region in visible_items if text]
+    if not blocks and visible:
+        blocks = [ContentBlock(modality=MaterialModality.IMAGE, content=visible, extraction_method="vision_visible_data", requires_confirmation=True)]
+    for item in inferences:
+        text, region = _visual_item(item)
+        if text:
+            blocks.append(ContentBlock(modality=MaterialModality.IMAGE, content=text, region=region, extraction_method="vision_inference", requires_confirmation=True))
+    warnings = ["图片可见数据和模型推断已分区，正式使用前需要用户确认。"]
     return visible, blocks, warnings
 
 
@@ -83,8 +88,10 @@ def parse_audio(filename: str, data: bytes) -> tuple[str, list[ContentBlock], li
     if not blocks:
         blocks = [ContentBlock(modality=MaterialModality.AUDIO, content=text, speaker="unknown", extraction_method="speech_to_text", requires_confirmation=True)]
     analysis = _analyze_management_transcript(text, settings)
-    if analysis:
-        blocks.append(ContentBlock(modality=MaterialModality.AUDIO, content=json.dumps(analysis, ensure_ascii=False), extraction_method="management_signal_analysis", requires_confirmation=True))
+    for signal_type, items in analysis.items() if analysis else []:
+        for item in items if isinstance(items, list) else []:
+            signal_text = str(item.get("excerpt") or item.get("text") or item) if isinstance(item, dict) else str(item)
+            blocks.append(ContentBlock(modality=MaterialModality.AUDIO, content=signal_text, speaker=str(item.get("speaker") or "unknown") if isinstance(item, dict) else "unknown", start_seconds=_float_or_none(item.get("start")) if isinstance(item, dict) else None, end_seconds=_float_or_none(item.get("end")) if isinstance(item, dict) else None, extraction_method=f"management_signal:{signal_type}", requires_confirmation=True))
     warnings = [] if all(block.speaker != "unknown" for block in blocks if block.extraction_method.startswith("speech_to_text")) else ["部分说话人尚未确认，管理层归因需要用户复核。"]
     if analysis:
         warnings.append("管理层语气、回避和承诺属于模型判断，已标记为待确认。")
@@ -126,6 +133,18 @@ def _analyze_management_transcript(text: str, settings) -> dict:
 def _float_or_none(value) -> float | None:
     try: return float(value)
     except (TypeError, ValueError): return None
+
+
+def _visual_item(item) -> tuple[str, dict[str, float] | None]:
+    if isinstance(item, dict):
+        text = str(item.get("text") or item.get("value") or "").strip()
+        raw_region = item.get("region")
+        if isinstance(raw_region, dict):
+            try: region = {key: float(raw_region[key]) for key in ("x", "y", "width", "height") if key in raw_region}
+            except (TypeError, ValueError): region = None
+        else: region = None
+        return text, region
+    return str(item).strip(), None
 
 
 def _request_json(url: str, body: dict, api_key: str, timeout: int) -> dict:

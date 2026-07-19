@@ -1,0 +1,71 @@
+{
+  "entityName": "JPMORGAN CHASE & CO",
+  "cik": 19617,
+  "facts": [
+    {
+      "tag": "Revenues",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-13",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "val": 182447000000,
+      "accn": "0001628280-26-008131",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-13",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "val": 57048000000,
+      "accn": "0001628280-26-008131",
+      "frame": null
+    },
+    {
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-13",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "val": -147782000000,
+      "accn": "0001628280-26-008131",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "Assets",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-13",
+      "start": null,
+      "end": "2025-12-31",
+      "val": 4424900000000,
+      "accn": "0001628280-26-008131",
+      "frame": null
+    },
+    {
+      "tag": "Liabilities",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-13",
+      "start": null,
+      "end": "2025-12-31",
+      "val": 4062462000000,
+      "accn": "0001628280-26-008131",
+      "frame": null
+    }
+  ]
+}

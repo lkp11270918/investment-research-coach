@@ -1,0 +1,12 @@
+{
+  "annotations": [
+    {
+      "case_id": "REAL-EXAMPLE-001",
+      "metric": "evidence_relation_judgement",
+      "annotator_id": "ANON-REVIEWER-1",
+      "label": {"relation": "contradicts"},
+      "source_coordinate": {"source_id": "SRC-1", "page": 10},
+      "annotated_at": "YYYY-MM-DDTHH:MM:SSZ"
+    }
+  ]
+}

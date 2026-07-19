@@ -152,6 +152,12 @@ def run_evidence_extractor(state: WorkflowState) -> AgentOutput:
                 )
             )
 
+        for block in doc.blocks:
+            if block.modality.value not in {"image", "audio"} or block.review_status == "rejected":
+                continue
+            category = EvidenceCategory.MANAGEMENT_OPINION if block.modality.value == "audio" else EvidenceCategory.FACT
+            evidence.append(EvidenceItem(category=category, statement=block.content, source_refs=[SourceRef(source_id=doc.source_id, excerpt=block.content, url=doc.url, block_id=block.block_id, region=block.region, start_seconds=block.start_seconds, end_seconds=block.end_seconds, extraction_method=block.extraction_method, requires_confirmation=block.review_status != "confirmed")], confidence=Confidence.MEDIUM if block.review_status == "confirmed" else Confidence.LOW, verification_status=VerificationStatus.VERIFIED if block.review_status == "confirmed" else VerificationStatus.TO_BE_VERIFIED, notes="多模态内容需用户确认。"))
+
     state.evidence_items = evidence
     missing = []
     if not any(item.category == EvidenceCategory.FINANCIAL_FACT for item in evidence):
@@ -354,6 +360,8 @@ def run_compliance_gate(state: WorkflowState, gate_name: str, draft_memo: Resear
     trap_output = state.agent_outputs.get("value_trap_contradiction")
     if not trap_output or not trap_output.findings:
         evidence_issues.append("价值陷阱与反证检查未完成，不能进入 Memo。")
+    if state.research_judgment.unresolved_critical_count:
+        evidence_issues.append(f"仍有 {state.research_judgment.unresolved_critical_count} 个关键反证缺少证据，不能进入正式 Memo。")
 
     support_ids = {evidence_id for output in state.agent_outputs.values() for finding in output.findings for evidence_id in finding.evidence_ids}
     if support_ids:

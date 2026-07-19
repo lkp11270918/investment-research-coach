@@ -11,18 +11,28 @@ import {
   answerDefense,
   fetchDefenseSessions,
   fetchEvidenceGraph,
+  fetchEvidenceGraphHistory,
   fetchResearchProject,
   fetchResearchMap,
+  fetchResearchMapHistory,
+  fetchResearchJudgment,
+  fetchResearchQuality,
   fetchResearchProjects,
   fetchResearchTasks,
   fetchThesisHistory,
   reviewEvidenceNode,
+  reviewEvidenceEdge,
+  reviewMaterialBlock,
+  updateResearchTask,
   saveThesis,
   startDefense,
   type DefenseSession,
   type EvidenceGraph,
   type EvidenceGraphNode,
+  type EvidenceGraphEdge,
   type ResearchMap,
+  type ResearchJudgment,
+  type ResearchQuality,
   type ProjectMaterial,
   type ResearchProjectSummary,
   type ResearchTask,
@@ -70,6 +80,10 @@ const roleLabels = {
 
 export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onLogin, section = 'map', onNewResearch, onAddMaterials, onProjectChange }: ResearchWorkspacePanelProps) {
   const [researchMap, setResearchMap] = useState<ResearchMap | null>(null)
+  const [mapHistoryCount, setMapHistoryCount] = useState(0)
+  const [graphHistoryCount, setGraphHistoryCount] = useState(0)
+  const [judgment, setJudgment] = useState<ResearchJudgment | null>(null)
+  const [quality, setQuality] = useState<ResearchQuality | null>(null)
   const [projects, setProjects] = useState<ResearchProjectSummary[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(projectId)
   const [graph, setGraph] = useState<EvidenceGraph | null>(null)
@@ -80,6 +94,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
   const [draft, setDraft] = useState<ThesisDraft>(emptyDraft)
   const [answer, setAnswer] = useState('')
   const [answerEvidenceIds, setAnswerEvidenceIds] = useState<string[]>([])
+  const [taskEvidenceIds, setTaskEvidenceIds] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -114,8 +129,12 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
       fetchDefenseSessions(selectedProjectId),
       fetchResearchProject(selectedProjectId),
       fetchResearchTasks(selectedProjectId),
+      fetchResearchMapHistory(selectedProjectId),
+      fetchEvidenceGraphHistory(selectedProjectId),
+      fetchResearchJudgment(selectedProjectId),
+      fetchResearchQuality(selectedProjectId),
     ])
-      .then(([nextMap, nextGraph, nextTheses, nextDefenses, detail, nextTasks]) => {
+      .then(([nextMap, nextGraph, nextTheses, nextDefenses, detail, nextTasks, mapHistory, graphHistory, nextJudgment, nextQuality]) => {
         if (cancelled) return
         setResearchMap(nextMap)
         setGraph(nextGraph)
@@ -123,6 +142,10 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
         setDefenses(nextDefenses)
         setMaterials(detail.materials)
         setTasks(nextTasks)
+        setMapHistoryCount(mapHistory.length)
+        setGraphHistoryCount(graphHistory.length)
+        setJudgment(nextJudgment)
+        setQuality(nextQuality)
         if (nextTheses.length) setDraft(nextTheses[nextTheses.length - 1].draft)
       })
       .catch(error => !cancelled && setError(error instanceof Error ? error.message : '研究工作台加载失败'))
@@ -147,9 +170,43 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
     if (!selectedProjectId) return
     try {
       setGraph(await reviewEvidenceNode(selectedProjectId, node.node_id, status))
+      setQuality(await fetchResearchQuality(selectedProjectId))
     } catch (error) {
       setError(error instanceof Error ? error.message : '证据状态更新失败')
     }
+  }
+
+  const handleRelationReview = async (edge: EvidenceGraphEdge, relation: EvidenceGraphEdge['relation']) => {
+    if (!selectedProjectId) return
+    try {
+      setGraph(await reviewEvidenceEdge(selectedProjectId, edge.edge_id, relation))
+      setQuality(await fetchResearchQuality(selectedProjectId))
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '关系修正失败')
+    }
+  }
+
+  const handleBlockReview = async (material: ProjectMaterial, blockId: string, confirmed: boolean) => {
+    if (!selectedProjectId) return
+    try {
+      const updated = await reviewMaterialBlock(selectedProjectId, material.material_id, blockId, confirmed)
+      setMaterials(current => current.map(item => item.material_id === updated.material_id ? updated : item))
+      const [nextGraph, nextQuality] = await Promise.all([fetchEvidenceGraph(selectedProjectId), fetchResearchQuality(selectedProjectId)])
+      setGraph(nextGraph)
+      setQuality(nextQuality)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '多模态内容确认失败')
+    }
+  }
+
+  const handleCompleteTask = async (task: ResearchTask) => {
+    if (!selectedProjectId) return
+    setSaving(true); setError('')
+    try {
+      const updated = await updateResearchTask(selectedProjectId, task.task_id, 'completed', taskEvidenceIds[task.task_id] || [])
+      setTasks(current => current.map(item => item.task_id === updated.task_id ? updated : item))
+      setResearchMap(await fetchResearchMap(selectedProjectId))
+    } catch (error) { setError(error instanceof Error ? error.message : '任务完成失败') } finally { setSaving(false) }
   }
 
   const handleSaveThesis = async () => {
@@ -230,7 +287,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
           <TabsContent value="map">
             <div className="mb-4 rounded-lg border border-border bg-card p-5">
               <div className="mb-3 flex items-center justify-between">
-                <div className="text-sm font-semibold text-foreground">研究完成度</div>
+                <div><div className="text-sm font-semibold text-foreground">研究完成度</div><div className="mt-1 text-[10px] text-muted-foreground">计划 v{researchMap?.version || 1} · {mapHistoryCount} 个历史版本 · {researchMap?.planner_model}</div></div>
                 <span className="font-mono text-sm text-primary">{researchMap?.completion_rate || 0}%</span>
               </div>
               <Progress value={researchMap?.completion_rate || 0} />
@@ -240,6 +297,8 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
                   {researchMap.next_questions.map(question => <div key={question} className="mt-1 text-sm text-foreground">· {question}</div>)}
                 </div>
               )}
+              {!!researchMap?.core_variables.length && <div className="mt-4 border-t border-border pt-4"><div className="mb-2 text-xs font-medium text-muted-foreground">公司核心变量</div><div className="flex flex-wrap gap-2">{researchMap.core_variables.map(item => <Badge key={item} className="border-primary/20 bg-primary/5 text-primary">{item}</Badge>)}</div></div>}
+              {!!researchMap?.material_requests.length && <div className="mt-4 text-xs text-muted-foreground">资料缺口：{researchMap.material_requests.join('、')}</div>}
             </div>
             <div className="space-y-2">
               {researchMap?.questions.map(question => {
@@ -264,14 +323,31 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
           </TabsContent>
 
           <TabsContent value="evidence">
+            {quality && <div className="mb-4 grid grid-cols-3 gap-4"><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">证据图谱质量</div><div className="mt-1 font-mono text-xl text-primary">{quality.evidence_graph_quality.score ?? 0}</div><div className="mt-2 text-[10px] text-muted-foreground">可追溯 {quality.evidence_graph_quality.traceability_rate ?? 0}% · 已确认 {quality.evidence_graph_quality.verified_rate ?? 0}% · 关系覆盖 {quality.evidence_graph_quality.relation_coverage ?? 0}%</div>{quality.evidence_graph_quality.issues?.map(item=><div key={item} className="mt-1 text-[10px] text-warning">{item}</div>)}</div><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">估值与安全边际</div><div className="mt-2 text-xs text-foreground">{quality.valuation_analysis.conclusion || '资料不足'}</div><div className="mt-2 flex gap-2">{Object.entries(quality.valuation_analysis.multiples || {}).map(([key,value])=><Badge key={key} className="border-border bg-secondary text-muted-foreground">{key.toUpperCase()} {value}</Badge>)}</div>{quality.valuation_analysis.scenarios?.map(item=><div key={item.name} className="mt-1 text-[10px] text-muted-foreground">{item.name}：{item.estimated_value_per_share ?? '-'} · 安全边际 {item.margin_of_safety_percent ?? '-'}%</div>)}</div><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">财务异常</div><div className="mt-1 font-mono text-xl text-warning">{quality.financial_anomalies.length}</div>{quality.financial_anomalies.slice(0,4).map(item=><div key={item.anomaly_id} className="mt-2 text-[10px] text-muted-foreground"><span className="text-warning">{item.description}</span><div>{item.verification_question}</div></div>)}</div></div>}
             <div className="mb-5 rounded-lg border border-border bg-card p-4">
-              <div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-foreground">项目资料库</div><span className="font-mono text-xs text-muted-foreground">{materials.length} 份</span></div>
-              <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">{materials.map(material => <div key={material.material_id} className="rounded-md border border-border bg-secondary/20 p-3"><div className="truncate text-xs font-medium text-foreground">{material.title}</div><div className="mt-1 flex gap-2 text-[10px] text-muted-foreground"><span>v{material.version}</span><span>{material.source_type}</span><span>{material.modality}</span></div>{material.period_covered && <div className="mt-1 text-[10px] text-muted-foreground">期间：{material.period_covered}</div>}{material.parse_warnings.map(item => <div key={item} className="mt-1 line-clamp-2 text-[10px] text-warning">{item}</div>)}</div>)}</div>
+              <div className="mb-3 flex items-center justify-between"><div><div className="text-sm font-semibold text-foreground">项目资料库</div><div className="mt-1 text-[10px] text-muted-foreground">证据图谱 v{graph?.version || 1} · {graphHistoryCount} 个历史版本</div></div><span className="font-mono text-xs text-muted-foreground">{materials.length} 份</span></div>
+              <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">{materials.map(material => <div key={material.material_id} className="rounded-md border border-border bg-secondary/20 p-3"><div className="truncate text-xs font-medium text-foreground">{material.title}</div><div className="mt-1 flex gap-2 text-[10px] text-muted-foreground"><span>v{material.version}</span><span>{material.source_type}</span><span>{material.modality}</span></div>{material.period_covered && <div className="mt-1 text-[10px] text-muted-foreground">期间：{material.period_covered}</div>}{material.parse_warnings.map(item => <div key={item} className="mt-1 line-clamp-2 text-[10px] text-warning">{item}</div>)}{material.blocks.filter(block => block.requires_confirmation).slice(0, 3).map(block => <div key={block.block_id} className="mt-2 rounded border border-warning/30 bg-warning/5 p-2"><div className="line-clamp-2 text-[10px] text-foreground">{block.content}</div><div className="mt-1 text-[9px] text-muted-foreground">{block.speaker ? `${block.speaker} · ` : ''}{block.start_seconds != null ? `${block.start_seconds}s · ` : ''}{block.region ? `区域 ${Math.round((block.region.x || 0) * 100)}%,${Math.round((block.region.y || 0) * 100)}%` : block.extraction_method}</div><div className="mt-2 flex items-center justify-between"><span className="text-[9px] text-warning">待人工确认</span><div className="flex gap-1"><button title="确认内容" onClick={() => handleBlockReview(material, block.block_id, true)} className="rounded border border-border p-1 text-success"><Check className="h-3 w-3" /></button><button title="否定内容" onClick={() => handleBlockReview(material, block.block_id, false)} className="rounded border border-border p-1 text-destructive"><X className="h-3 w-3" /></button></div></div></div>)}</div>)}</div>
             </div>
+            {judgment && (judgment.view_points.length > 0 || judgment.red_team_challenges.length > 0) && <div className="mb-4 grid grid-cols-2 gap-4"><div className="rounded-lg border border-border bg-card p-4"><div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-foreground">观点比较</div><span className="text-[10px] text-muted-foreground">{judgment.sell_side_source_count} 个卖方来源</span></div>{judgment.view_points.map(point => <div key={`${point.point_type}-${point.topic}`} className="mt-2 rounded-md border border-border bg-secondary/20 p-3"><Badge className="border-border bg-secondary text-muted-foreground">{point.point_type}</Badge><div className="mt-2 text-xs font-medium text-foreground">{point.topic}</div><div className="mt-1 text-xs text-muted-foreground">{point.detail}</div>{point.buyer_verification_question && <div className="mt-2 text-[10px] text-warning">买方验证：{point.buyer_verification_question}</div>}</div>)}</div><div className="rounded-lg border border-border bg-card p-4"><div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-foreground">Red Team</div><span className="text-[10px] text-destructive">{judgment.unresolved_critical_count} 个关键缺口</span></div>{judgment.red_team_challenges.map(item => <div key={item.challenge_id} className="mt-2 rounded-md border border-border bg-secondary/20 p-3"><div className="flex items-center justify-between"><span className="text-xs font-medium text-foreground">{item.title}</span><Badge className={item.severity === 'critical' ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'border-warning/30 bg-warning/10 text-warning'}>{item.severity}</Badge></div><div className="mt-1 text-xs text-muted-foreground">{item.mechanism}</div><div className="mt-2 text-[10px] text-warning">推翻测试：{item.falsification_test}</div></div>)}</div></div>}
             {!!graph?.conflicts.length && (
               <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
                 <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive"><AlertTriangle className="h-4 w-4" />来源冲突</div>
                 {graph.conflicts.map(conflict => <div key={conflict} className="mt-1 text-xs text-muted-foreground">{conflict}</div>)}
+              </div>
+            )}
+            {!!graph?.edges.length && (
+              <div className="mb-4 rounded-lg border border-border bg-card p-4">
+                <div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-foreground">证据关系</div><span className="font-mono text-xs text-muted-foreground">{graph.edges.length} 条</span></div>
+                <div className="max-h-72 space-y-2 overflow-y-auto">
+                  {graph.edges.filter(edge => ['supports', 'contradicts', 'depends_on', 'questioned_by', 'duplicates'].includes(edge.relation)).slice(0, 100).map(edge => (
+                    <div key={edge.edge_id} className="grid grid-cols-[1fr_132px] items-center gap-3 rounded-md border border-border bg-secondary/20 p-3">
+                      <div className="min-w-0"><div className="truncate text-xs text-foreground">{edge.from_node_id} → {edge.to_node_id}</div><div className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">{edge.rationale || '暂无关系说明'} · {edge.relation_source}{edge.reviewed_by_user ? ' · 已人工确认' : ''}</div></div>
+                      <select value={edge.relation} onChange={event => handleRelationReview(edge, event.target.value as EvidenceGraphEdge['relation'])} aria-label="修正证据关系" className="h-8 rounded-md border border-border bg-input px-2 text-xs text-foreground outline-none focus:border-primary">
+                        <option value="supports">支持</option><option value="contradicts">反驳</option><option value="depends_on">依赖</option><option value="questioned_by">质疑</option><option value="duplicates">重复</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <div className="space-y-2">
@@ -322,7 +398,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
               <div className="space-y-3">
                 {[...theses].reverse().map(thesis => (
                   <div key={thesis.thesis_id} className="rounded-lg border border-border bg-card p-4">
-                    <div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold text-foreground">版本 {thesis.version}</span><Badge className={thesis.assessment.status === 'pass' ? 'border-success/30 bg-success/10 text-success' : 'border-warning/30 bg-warning/10 text-warning'}>{thesis.assessment.evidence_coverage}%</Badge></div>
+                    <div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold text-foreground">版本 {thesis.version} · 图谱v{thesis.evidence_graph_version || '-'}</span><Badge className={thesis.assessment.status === 'pass' ? 'border-success/30 bg-success/10 text-success' : 'border-warning/30 bg-warning/10 text-warning'}>{thesis.assessment.evidence_coverage}%</Badge></div>
                     <p className="text-xs leading-relaxed text-muted-foreground">{thesis.draft.core_view}</p>
                     {!!thesis.assessment.issues.length && <div className="mt-3 border-t border-border pt-3">{thesis.assessment.issues.map(issue => <div key={issue} className="mt-1 text-xs text-warning">· {issue}</div>)}</div>}
                     {!!thesis.assessment.ai_suggestions.length && <div className="mt-3 border-t border-border pt-3">{thesis.assessment.ai_suggestions.map(item => <div key={item} className="mt-1 text-xs text-muted-foreground">建议：{item}</div>)}</div>}
@@ -354,7 +430,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
               </div>
             )}
             {!activeDefense && defenses.filter(item => item.status === 'completed').map(session => <DefenseHistory key={session.session_id} session={session} />)}
-            {!!tasks.length && <div className="mt-5 rounded-lg border border-border bg-card p-4"><div className="mb-3 text-sm font-semibold text-foreground">答辩回流任务</div>{tasks.map(task => <div key={task.task_id} className="mt-2 rounded-md border border-border bg-secondary/20 p-3"><div className="text-xs font-medium text-foreground">{task.title}</div><div className="mt-1 text-xs text-muted-foreground">{task.detail}</div></div>)}</div>}
+            {!!tasks.length && <div className="mt-5 rounded-lg border border-border bg-card p-4"><div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-foreground">研究改进任务</div><span className="text-xs text-muted-foreground">{tasks.filter(task => task.status === 'open').length} 项待完成</span></div>{tasks.map(task => <div key={task.task_id} className="mt-2 rounded-md border border-border bg-secondary/20 p-3"><div className="flex items-center justify-between"><div className="text-xs font-medium text-foreground">{task.title}</div><Badge className={task.status === 'completed' ? 'border-success/30 bg-success/10 text-success' : 'border-warning/30 bg-warning/10 text-warning'}>{task.status === 'completed' ? '已完成' : '待完成'}</Badge></div><div className="mt-1 text-xs text-muted-foreground">{task.detail}</div>{task.status === 'open' && <div className="mt-3"><EvidencePicker title="完成任务所依据的已确认事实" nodes={evidenceNodes.filter(node => node.verification_status === 'verified')} selected={taskEvidenceIds[task.task_id] || []} onChange={ids => setTaskEvidenceIds(current => ({ ...current, [task.task_id]: ids }))} /><Button size="sm" className="mt-2" disabled={saving || !(taskEvidenceIds[task.task_id] || []).length} onClick={() => handleCompleteTask(task)}><Check className="h-3.5 w-3.5" />完成任务</Button></div>}{task.status === 'completed' && <div className="mt-2 text-[10px] text-muted-foreground">完成证据：{task.completion_evidence_ids.join('、')}</div>}</div>)}</div>}
           </TabsContent>
         </Tabs>
       )}
@@ -379,5 +455,5 @@ function EvidencePicker({ title, nodes, selected, onChange }: { title: string; n
 }
 
 function DefenseHistory({ session }: { session: DefenseSession }) {
-  return <div className="space-y-2"><div className="flex items-center justify-between"><div className="text-xs font-medium text-muted-foreground">答辩记录</div>{session.overall_score != null && <Badge className="border-primary/30 bg-primary/10 text-primary">{session.overall_score}分</Badge>}</div>{session.turns.filter(turn => turn.answer).map(turn => <div key={turn.turn_id} className="rounded-lg border border-border bg-card p-3"><div className="flex items-center justify-between"><span className="text-xs font-medium text-foreground">{roleLabels[turn.role]}</span>{turn.passed ? <Check className="h-3.5 w-3.5 text-success" /> : <RefreshCw className="h-3.5 w-3.5 text-warning" />}</div><div className="mt-2 line-clamp-3 text-xs leading-relaxed text-muted-foreground">{turn.answer}</div>{turn.feedback && <div className="mt-2 border-t border-border pt-2 text-xs text-warning">{turn.feedback}</div>}</div>)}</div>
+  return <div className="space-y-2"><div className="flex items-center justify-between"><div><div className="text-xs font-medium text-muted-foreground">答辩记录</div><div className="mt-1 text-[9px] text-muted-foreground">{session.question_model}{session.targeted_gaps.length ? ` · 针对${session.targeted_gaps.length}项历史短板` : ''}</div></div>{session.overall_score != null && <Badge className="border-primary/30 bg-primary/10 text-primary">{session.overall_score}分</Badge>}</div>{session.turns.filter(turn => turn.answer).map(turn => <div key={turn.turn_id} className="rounded-lg border border-border bg-card p-3"><div className="flex items-center justify-between"><span className="text-xs font-medium text-foreground">{roleLabels[turn.role]}</span>{turn.passed ? <Check className="h-3.5 w-3.5 text-success" /> : <RefreshCw className="h-3.5 w-3.5 text-warning" />}</div><div className="mt-2 line-clamp-3 text-xs leading-relaxed text-muted-foreground">{turn.answer}</div>{Object.keys(turn.score_breakdown).length > 0 && <div className="mt-2 flex flex-wrap gap-2 text-[9px] text-muted-foreground">{Object.entries(turn.score_breakdown).map(([key, value]) => <span key={key}>{key} {value}</span>)}</div>}{turn.feedback && <div className="mt-2 border-t border-border pt-2 text-xs text-warning">{turn.feedback}</div>}</div>)}</div>
 }

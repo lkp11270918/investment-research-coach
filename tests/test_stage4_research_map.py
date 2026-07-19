@@ -7,6 +7,17 @@ from backend.research_map import generate_research_map
 
 
 class ResearchMapTest(unittest.TestCase):
+    def test_company_evidence_creates_specific_questions_and_new_version(self) -> None:
+        graph = EvidenceGraph(nodes=[EvidenceGraphNode(node_id="N-risk", node_type="risk", label="海外客户集中度上升且回款周期延长", verification_status=VerificationStatus.TO_BE_VERIFIED)])
+        first = generate_research_map("P", "软件", graph, company_name="甲公司", research_objective="验证海外增长")
+        self.assertTrue(any("海外客户集中度" in item.question for item in first.questions))
+        self.assertIn("海外客户集中度上升且回款周期延长", first.core_variables)
+        unchanged = generate_research_map("P", "软件", graph, company_name="甲公司", research_objective="验证海外增长", previous=first)
+        self.assertEqual(unchanged.version, first.version)
+        graph.nodes.append(EvidenceGraphNode(node_id="N-risk-2", node_type="risk", label="续费率连续下降", verification_status=VerificationStatus.TO_BE_VERIFIED))
+        changed = generate_research_map("P", "软件", graph, company_name="甲公司", research_objective="验证海外增长", previous=first)
+        self.assertEqual(changed.version, first.version + 1)
+        self.assertIn("新增", changed.change_summary)
     def test_user_intake_changes_plan_and_unverified_evidence_does_not_answer(self) -> None:
         from backend.models import EvidenceGraph, EvidenceGraphNode, VerificationStatus
 

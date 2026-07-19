@@ -2,6 +2,7 @@
 
 import { useState, useRef, type ChangeEvent } from 'react'
 import { Textarea } from '@/components/ui/textarea'
+import { ingestWebUrl } from '@/lib/api'
 
 interface MaterialItem {
   id: string
@@ -12,6 +13,9 @@ interface MaterialItem {
   content?: string
   file?: File
   files?: File[]
+  url?: string
+  publisher?: string
+  publishedAt?: string
 }
 
 interface InputPanelProps {
@@ -91,6 +95,10 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
   const [activeType, setActiveType] = useState<string | null>('financial')
   const [materialContents, setMaterialContents] = useState<Record<string, string>>({})
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, File[]>>({})
+  const [urlInputs, setUrlInputs] = useState<Record<string, string>>({})
+  const [urlMetadata, setUrlMetadata] = useState<Record<string, { url?: string; publisher?: string; publishedAt?: string }>>({})
+  const [urlLoading, setUrlLoading] = useState(false)
+  const [urlError, setUrlError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleSampleCompany = (c: typeof sampleCompanies[0]) => {
@@ -131,6 +139,22 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
     })
   }
 
+  const handleUrlImport = async (id: string) => {
+    const url = urlInputs[id]?.trim()
+    if (!url) return
+    setUrlLoading(true)
+    setUrlError('')
+    try {
+      const material = await ingestWebUrl(url, id)
+      handleTextChange(id, material.content)
+      setUrlMetadata(prev => ({ ...prev, [id]: { url: material.url || url, publisher: material.publisher || undefined, publishedAt: material.published_at || undefined } }))
+    } catch (error) {
+      setUrlError(error instanceof Error ? error.message : '网页导入失败')
+    } finally {
+      setUrlLoading(false)
+    }
+  }
+
   const materialReady = (id: string) => Boolean(materialContents[id]?.trim() || uploadedFiles[id]?.length)
   const uploadedFileCount = (id: string) => uploadedFiles[id]?.length || 0
   const uploadedFileSize = (id: string) => (uploadedFiles[id] || []).reduce((sum, file) => sum + file.size, 0)
@@ -149,6 +173,9 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
       content: materialContents[m.id] || '',
       file: uploadedFiles[m.id]?.[0],
       files: uploadedFiles[m.id] || [],
+      url: urlMetadata[m.id]?.url,
+      publisher: urlMetadata[m.id]?.publisher,
+      publishedAt: urlMetadata[m.id]?.publishedAt,
     }))
     onStartAnalysis({ stockCode, companyName, industry, projectId, researchObjective, investmentHorizon, initialView, keyQuestion, materials })
   }
@@ -359,6 +386,12 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
                   </div>
                 </div>
                 <div className="p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <input value={urlInputs[activeType] || ''} onChange={event => setUrlInputs(prev => ({ ...prev, [activeType]: event.target.value }))} placeholder="粘贴公开网页 URL" className="h-9 min-w-0 flex-1 rounded-md border border-border bg-input px-3 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary" />
+                    <button type="button" onClick={() => handleUrlImport(activeType)} disabled={urlLoading || !urlInputs[activeType]?.trim()} className="h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground hover:bg-accent disabled:opacity-40">{urlLoading ? '正在读取...' : '导入网页'}</button>
+                  </div>
+                  {urlError && <div className="mb-3 text-xs text-destructive">{urlError}</div>}
+                  {urlMetadata[activeType]?.url && <div className="mb-3 text-[10px] text-muted-foreground">已导入：{urlMetadata[activeType].publisher || urlMetadata[activeType].url}{urlMetadata[activeType].publishedAt ? ` · ${urlMetadata[activeType].publishedAt}` : ''}</div>}
                   <Textarea
                     value={materialContents[activeType] || ''}
                     onChange={e => handleTextChange(activeType, e.target.value)}

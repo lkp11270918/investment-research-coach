@@ -12,10 +12,11 @@ from .models import (
     VerificationStatus,
     WorkflowState,
 )
-from .evidence_relations import infer_semantic_edges
+from .evidence_relations import infer_semantic_edges, infer_semantic_edges_nli
+from .llm_client import OpenAIClient
 
 
-def build_evidence_graph(state: WorkflowState) -> EvidenceGraph:
+def build_evidence_graph(state: WorkflowState, semantic_client: OpenAIClient | None = None) -> EvidenceGraph:
     nodes: list[EvidenceGraphNode] = []
     edges: list[EvidenceGraphEdge] = []
     conflicts: list[str] = []
@@ -34,6 +35,11 @@ def build_evidence_graph(state: WorkflowState) -> EvidenceGraph:
             if not any(node.node_id == metric_node_id for node in nodes):
                 nodes.append(EvidenceGraphNode(node_id=metric_node_id, node_type="metric", label=item.metric_name, confidence=Confidence.HIGH, verification_status=VerificationStatus.VERIFIED))
             edges.append(EvidenceGraphEdge(from_node_id=node_id, to_node_id=metric_node_id, relation=EvidenceRelation.MENTIONS, rationale="标准化财务指标", confidence=Confidence.HIGH))
+            if item.period:
+                entity_node_id = f"ENTITY:metric:{item.metric_name}:{item.period}"
+                if not any(node.node_id == entity_node_id for node in nodes):
+                    nodes.append(EvidenceGraphNode(node_id=entity_node_id, node_type="metric_period_entity", label=f"{item.period} {item.metric_name}", confidence=Confidence.HIGH, verification_status=VerificationStatus.VERIFIED, metadata={"entity_type": "financial_metric_period", "metric_name": item.metric_name, "period": item.period}))
+                edges.append(EvidenceGraphEdge(from_node_id=node_id, to_node_id=entity_node_id, relation=EvidenceRelation.MENTIONS, rationale="统一指标与期间实体", confidence=Confidence.HIGH))
         for ref in item.source_refs:
             source_node = f"SOURCE:{ref.source_id}"
             if source_node in source_nodes:
@@ -68,25 +74,41 @@ def build_evidence_graph(state: WorkflowState) -> EvidenceGraph:
             nodes.append(EvidenceGraphNode(node_id=claim_id, node_type="analysis_claim", label=finding.detail, confidence=finding.confidence, verification_status=VerificationStatus.PARTIALLY_SUPPORTED if finding.evidence_ids else VerificationStatus.UNSUPPORTED, metadata={"title": finding.title, "classification": finding.classification, "agent": output.agent_name}))
             for evidence_id in finding.evidence_ids:
                 edges.append(EvidenceGraphEdge(from_node_id=f"EVIDENCE:{evidence_id}", to_node_id=claim_id, relation=EvidenceRelation.SUPPORTS, rationale=finding.title, confidence=finding.confidence))
-    edges.extend(infer_semantic_edges(nodes))
-    semantic_conflicts = [edge.rationale or "语义冲突" for edge in edges if edge.relation == EvidenceRelation.CONTRADICTS and edge.rationale and edge.rationale.startswith("语义关系")]
+    for challenge in state.research_judgment.red_team_challenges:
+        challenge_id = f"REDTEAM:{challenge.challenge_id}"
+        nodes.append(EvidenceGraphNode(node_id=challenge_id, node_type="red_team_challenge", label=challenge.title + "：" + challenge.mechanism, confidence=Confidence.HIGH if challenge.severity == "critical" else Confidence.MEDIUM, verification_status=VerificationStatus.UNSUPPORTED if challenge.status == "open" else VerificationStatus.PARTIALLY_SUPPORTED, metadata={"severity": challenge.severity, "status": challenge.status, "falsification_test": challenge.falsification_test, "missing_evidence": challenge.missing_evidence}))
+        for evidence_id in challenge.evidence_ids:
+            edges.append(EvidenceGraphEdge(from_node_id=challenge_id, to_node_id=f"EVIDENCE:{evidence_id}", relation=EvidenceRelation.QUESTIONED_BY, rationale=challenge.falsification_test, confidence=Confidence.HIGH))
+    edges.extend(infer_semantic_edges_nli(nodes, semantic_client))
+    semantic_conflicts = [edge.rationale or "语义冲突" for edge in edges if edge.relation == EvidenceRelation.CONTRADICTS and edge.relation_source in {"nli_model", "heuristic_fallback"}]
     return EvidenceGraph(nodes=nodes, edges=_dedupe_edges(edges), conflicts=list(dict.fromkeys([*conflicts, *semantic_conflicts])))
 
 
 def merge_evidence_graphs(existing: EvidenceGraph | None, incoming: EvidenceGraph) -> EvidenceGraph:
     if existing is None:
         return incoming
-    nodes = {node.node_id: node for node in existing.nodes}
-    nodes.update({node.node_id: node for node in incoming.nodes})
+    nodes = {node.node_id: node for node in incoming.nodes}
+    for node in existing.nodes:
+        if node.metadata.get("user_review_note") is not None:
+            nodes[node.node_id] = node
+        else:
+            nodes.setdefault(node.node_id, node)
     merged_nodes = list(nodes.values())
     semantic_edges = infer_semantic_edges(merged_nodes)
-    return EvidenceGraph(nodes=merged_nodes, edges=_dedupe_edges([*existing.edges, *incoming.edges, *semantic_edges]), conflicts=list(dict.fromkeys([*existing.conflicts, *incoming.conflicts])))
+    reviewed_edges = [edge for edge in existing.edges if edge.reviewed_by_user]
+    reviewed_pairs = {(edge.from_node_id, edge.to_node_id) for edge in reviewed_edges}
+    generated = [edge for edge in [*existing.edges, *incoming.edges, *semantic_edges] if not edge.reviewed_by_user and (edge.from_node_id, edge.to_node_id) not in reviewed_pairs]
+    old_ids = {node.node_id for node in existing.nodes}
+    incoming_ids = {node.node_id for node in incoming.nodes}
+    added = incoming_ids - old_ids
+    removed = [node_id for node_id in old_ids - incoming_ids if not nodes[node_id].metadata.get("user_review_note")]
+    return EvidenceGraph(version=existing.version + 1, parent_version=existing.version, nodes=merged_nodes, edges=_dedupe_edges([*reviewed_edges, *generated]), conflicts=list(dict.fromkeys([*existing.conflicts, *incoming.conflicts])), change_summary=f"新增{len(added)}个节点，保留{len(old_ids)}个历史节点，发现{len(incoming.conflicts)}项当前冲突", removed_node_ids=removed)
 
 
 def _normalized_value(value, unit: str | None):
     if not isinstance(value, (int, float)):
         return f"{value}|{unit}"
-    multipliers = {"元": 1, "千元": 1_000, "万元": 10_000, "百万元": 1_000_000, "亿元": 100_000_000, "%": 1}
+    multipliers = {"元": 1, "千元": 1_000, "万元": 10_000, "百万元": 1_000_000, "亿元": 100_000_000, "USD": 1, "USD/shares": 1, "%": 1}
     return round(float(value) * multipliers.get(unit or "", 1), 6)
 
 

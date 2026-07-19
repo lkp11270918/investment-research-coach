@@ -276,21 +276,44 @@ def _normalize_text(text: str) -> str:
 
 def cross_check_multimodal_materials(materials: list[RawMaterial]) -> None:
     numeric_sources = set()
+    structured_claims: list[tuple[str, str | None, str | None, str]] = []
     for material in materials:
         if material.modality in {MaterialModality.TEXT, MaterialModality.TABLE}:
             numeric_sources.update(_numeric_tokens(material.content))
+            structured_claims.extend(_structured_numeric_claims(material.content))
     for material in materials:
         if material.modality != MaterialModality.IMAGE:
             continue
-        visible_blocks = [block for block in material.blocks if block.extraction_method == "vision_model"]
+        visible_blocks = [block for block in material.blocks if block.extraction_method == "vision_visible_data"]
         visible_numbers = set().union(*(_numeric_tokens(block.content) for block in visible_blocks)) if visible_blocks else set()
         if not visible_numbers:
             material.parse_warnings.append("图片未识别出可交叉核验的数字。")
+            for block in visible_blocks: block.cross_check_status = "no_numeric_data"
         elif visible_numbers & numeric_sources:
-            material.parse_warnings.append(f"图片中 {len(visible_numbers & numeric_sources)} 个数字可在其他材料中找到，仍需核对指标与期间。")
+            matched = visible_numbers & numeric_sources
+            material.parse_warnings.append(f"图片中 {len(matched)} 个数字可在其他材料中找到，仍需核对指标与期间。")
+            for block in visible_blocks:
+                claims = _structured_numeric_claims(block.content)
+                exact = [f"{metric or '未识别指标'} {period or '未识别期间'} {number}{unit or ''}" for number, period, unit, metric in claims if (number, period, unit, metric) in structured_claims]
+                same_number_conflicts = [claim for claim in claims if not any(claim == source for source in structured_claims) and any(claim[0] == source[0] for source in structured_claims)]
+                block.cross_check_status = "matched" if exact else "conflict" if same_number_conflicts else "number_only_match"
+                block.cross_check_matches = exact
+                block.review_note = f"系统交叉核验：{len(exact)}项指标-期间-单位完全匹配；{len(same_number_conflicts)}项同数字但口径不同；仍待人工确认"
         else:
             material.parse_warnings.append("图片数字未在其他文本或表格材料中找到，暂标记为待验证。")
+            for block in visible_blocks: block.cross_check_status = "unmatched"
 
 
 def _numeric_tokens(text: str) -> set[str]:
     return {token.replace(",", "") for token in re.findall(r"[-+]?\d[\d,]*(?:\.\d+)?%?", text)}
+
+def _structured_numeric_claims(text: str) -> list[tuple[str, str | None, str | None, str]]:
+    metrics = {"营业收入":"revenue","营收":"revenue","净利润":"net_profit","经营现金流":"operating_cash_flow","自由现金流":"free_cash_flow","应收账款":"accounts_receivable","存货":"inventory","资产负债率":"debt_to_asset_ratio","每股收益":"eps","每股净资产":"book_value_per_share","股价":"share_price"}
+    claims=[]
+    for line in text.splitlines() or [text]:
+        period_match=re.search(r"20\d{2}(?:年|Q[1-4]|H[12])?",line,re.I); unit_match=re.search(r"亿元|百万元|万元|元/股|元|%|股",line)
+        metric=next((value for label,value in metrics.items() if label in line),"")
+        for number in _numeric_tokens(line):
+            if period_match and number.rstrip("%").startswith(period_match.group()[:4]): continue
+            claims.append((number,period_match.group() if period_match else None,unit_match.group() if unit_match else None,metric))
+    return claims

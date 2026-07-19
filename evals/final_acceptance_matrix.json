@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "authority": "latest To C final product target",
+  "requirements": [
+    {"id":"FP-01","outcome":"公司级动态研究规划","implementation":["backend/research_map.py"],"tests":["tests/test_stage4_research_map.py"],"real_metric":"research_question_expert_relevance","release_gate":">=85%, 60 real companies","status":"engineering_complete"},
+    {"id":"FP-02","outcome":"多模态资料统一导入","implementation":["backend/file_parsers.py","backend/multimodal_parser.py"],"tests":["tests/test_stage2_multimodal.py"],"real_metric":"multimodal_ingestion_success","release_gate":">=95% supported files","status":"engineering_complete"},
+    {"id":"FP-03","outcome":"图片可见数据与推断分离","implementation":["backend/multimodal_parser.py"],"tests":["tests/test_stage4_web_multimodal_review.py"],"real_metric":"image_visible_data_accuracy","release_gate":">=90%, inference label=100%","status":"engineering_complete"},
+    {"id":"FP-04","outcome":"音频说话人、观点和回避分析","implementation":["backend/multimodal_parser.py"],"tests":["tests/test_stage2_multimodal.py"],"real_metric":"audio_speaker_claim_accuracy","release_gate":">=85%","status":"engineering_complete"},
+    {"id":"FP-05","outcome":"确定性财务计算","implementation":["backend/financial_calculations.py"],"tests":["tests/test_stage1_financial_calculations.py"],"real_metric":"financial_fact_accuracy","release_gate":">=95%","status":"real_validated"},
+    {"id":"FP-06","outcome":"小模型高频分类进入主流程","implementation":["backend/model_pipeline.py"],"tests":["tests/test_stage11_model_pipeline.py"],"real_metric":"lightweight_classification_macro_f1","release_gate":">=85%","status":"engineering_complete"},
+    {"id":"FP-07","outcome":"Embedding和Reranker真实检索","implementation":["backend/model_pipeline.py"],"tests":["tests/test_stage11_model_pipeline.py"],"real_metric":"retrieval_ndcg_at_10","release_gate":">=85%","status":"engineering_complete"},
+    {"id":"FP-08","outcome":"证据图谱语义和版本演化","implementation":["backend/evidence_graph.py","backend/evidence_relations.py"],"tests":["tests/test_stage3_evidence_graph.py"],"real_metric":"evidence_relation_judgement","release_gate":">=85%, contradiction recall>=90%","status":"engineering_complete"},
+    {"id":"FP-09","outcome":"公司观点、管理层、卖方和新闻比较","implementation":["backend/llm_agents.py"],"tests":["tests/test_stage9_release_gate.py"],"real_metric":"view_comparison_expert_score","release_gate":">=85%","status":"engineering_complete"},
+    {"id":"FP-10","outcome":"Red Team反证和价值陷阱","implementation":["backend/llm_agents.py"],"tests":["tests/test_stage6_dynamic_gate.py"],"real_metric":"red_team_critical_recall","release_gate":">=90%","status":"engineering_complete"},
+    {"id":"FP-11","outcome":"Evidence Judge强制门禁","implementation":["backend/workflow_runner.py"],"tests":["tests/test_stage6_dynamic_gate.py"],"real_metric":"unsupported_conclusion_block","release_gate":"=100%","status":"engineering_complete"},
+    {"id":"FP-12","outcome":"Thesis Builder用户决策","implementation":["backend/thesis_builder.py"],"tests":["tests/test_stage5_thesis.py"],"real_metric":"thesis_evidence_relevance","release_gate":">=85%","status":"engineering_complete"},
+    {"id":"FP-13","outcome":"Memo共同写作和版本历史","implementation":["backend/memo_coauthor.py","frontend/components/memo-coauthor-panel.tsx"],"tests":["tests/test_stage5_memo_coauthor.py"],"real_metric":"memo_traceability","release_gate":"=100% key claims","status":"engineering_complete"},
+    {"id":"FP-14","outcome":"动态投委会答辩","implementation":["backend/defense.py"],"tests":["tests/test_stage7_defense.py"],"real_metric":"defense_scoring_agreement","release_gate":">=85%","status":"engineering_complete"},
+    {"id":"FP-15","outcome":"反馈回流研究任务","implementation":["backend/task_feedback.py"],"tests":["tests/test_stage7_task_feedback_loop.py"],"real_metric":"feedback_task_linkage","release_gate":"=100%","status":"engineering_complete"},
+    {"id":"FP-16","outcome":"长期行为能力画像","implementation":["backend/capability_profile.py"],"tests":["tests/test_stage6_behavior_profile.py"],"real_metric":"capability_explainability","release_gate":"=100%, repeated error >=3 projects","status":"engineering_complete"},
+    {"id":"FP-17","outcome":"五区PC研究工作台","implementation":["frontend/components/research-workspace-panel.tsx"],"tests":["tests/test_stage12_release_lifecycle.py"],"real_metric":"desktop_e2e_completion","release_gate":"=100% core journeys","status":"engineering_complete"},
+    {"id":"FP-18","outcome":"To C不输出系统投资评级","implementation":["backend/llm_agents.py"],"tests":["tests/test_stage9_release_gate.py"],"real_metric":"prohibited_rating_rate","release_gate":"=0%","status":"engineering_complete"},
+    {"id":"FP-19","outcome":"优于通用Agent的目标用户价值","implementation":["backend/evals/comparative_eval.py"],"tests":["tests/test_stage8_real_release_gates.py"],"real_metric":"target_user_comparative_pilot","release_gate":">=10 users and superiority gates","status":"engineering_complete"},
+    {"id":"FP-20","outcome":"生产安全、隐私、成本和恢复","implementation":["backend/main.py","backend/auth.py","backend/production.py"],"tests":["tests/test_stage10_production_safety.py"],"real_metric":"production_readiness","release_gate":"all security and reliability checks pass","status":"engineering_complete"}
+  ]
+}

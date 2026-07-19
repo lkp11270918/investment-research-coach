@@ -6,7 +6,7 @@ import { AuthModal } from '@/components/auth-modal'
 import { NavHeader } from '@/components/nav-header'
 import { InputPanel } from '@/components/input-panel'
 import { AnalysisPanel, type AnalysisData } from '@/components/analysis-panel'
-import { MemoPanel } from '@/components/memo-panel'
+import { MemoCoauthorPanel } from '@/components/memo-coauthor-panel'
 import { ReviewPanel } from '@/components/review-panel'
 import { ResearchWorkspacePanel } from '@/components/research-workspace-panel'
 import { CapabilityPanel } from '@/components/capability-panel'
@@ -141,7 +141,8 @@ export default function Page() {
             {activeTab === 'thesis' && <ResearchWorkspacePanel isLoggedIn={isLoggedIn} projectId={currentProjectId} companyName={analysisData?.companyName} onLogin={handleLogin} section="thesis" onProjectChange={setCurrentProjectId} />}
 
             {activeTab === 'memo' && (
-              <><MemoPanel
+              <><MemoCoauthorPanel
+                projectId={currentProjectId}
                 companyName={analysisData?.companyName}
                 stockCode={analysisData?.stockCode}
                 industry={analysisData?.industry}

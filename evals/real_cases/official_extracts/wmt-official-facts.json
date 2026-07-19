@@ -1,0 +1,58 @@
+{
+  "entityName": "WALMART INC.",
+  "cik": 104169,
+  "facts": [
+    {
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "fy": 2026,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-03-13",
+      "start": "2025-02-01",
+      "end": "2026-01-31",
+      "val": 706413000000,
+      "accn": "0000104169-26-000055",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "fy": 2026,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-03-13",
+      "start": "2025-02-01",
+      "end": "2026-01-31",
+      "val": 21893000000,
+      "accn": "0000104169-26-000055",
+      "frame": null
+    },
+    {
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "fy": 2026,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-03-13",
+      "start": "2025-02-01",
+      "end": "2026-01-31",
+      "val": 41565000000,
+      "accn": "0000104169-26-000055",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "Assets",
+      "unit": "USD",
+      "fy": 2026,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-03-13",
+      "start": null,
+      "end": "2026-01-31",
+      "val": 284668000000,
+      "accn": "0000104169-26-000055",
+      "frame": null
+    }
+  ]
+}

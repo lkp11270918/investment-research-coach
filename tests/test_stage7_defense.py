@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from backend.defense import answer_defense, start_defense
-from backend.models import AgentStatus, Confidence, EvidenceGraph, EvidenceGraphNode, ThesisAssessment, ThesisDraft, ThesisVariable, ThesisVersion
+from backend.models import AgentStatus, Confidence, EvidenceGraph, EvidenceGraphNode, ThesisAssessment, ThesisDraft, ThesisVariable, ThesisVersion, VerificationStatus
 
 
 class NoLLM:
@@ -11,6 +11,12 @@ class NoLLM:
 
 
 class DefenseTest(unittest.TestCase):
+    def test_questions_use_company_evidence_not_only_role_template(self) -> None:
+        graph = EvidenceGraph(nodes=[EvidenceGraphNode(node_id="EVIDENCE:E9", node_type="risk", label="海外应收账款周转天数显著上升", evidence_id="E9", verification_status=VerificationStatus.VERIFIED)])
+        thesis = ThesisVersion(project_id="P", version=1, draft=ThesisDraft(core_view="海外增长可持续"), assessment=ThesisAssessment(status=AgentStatus.PARTIAL))
+        session = start_defense("P", thesis, graph)
+        self.assertIn("海外应收账款", session.turns[0].question)
+        self.assertEqual(session.question_model, "deterministic_company_evidence")
     def test_four_roles_and_dynamic_followup(self) -> None:
         graph = EvidenceGraph(nodes=[EvidenceGraphNode(node_id="EVIDENCE:E1", node_type="financial_fact", label="经营现金流", evidence_id="E1")])
         draft = ThesisDraft(core_view="现金流质量需要验证", core_variables=[ThesisVariable(name=str(i), rationale="关键") for i in range(3)], supporting_evidence_ids=["E1"], counter_evidence_ids=["E1"], assumptions=["需求稳定"], falsification_conditions=["自由现金流下降"], unknowns=["资本开支"])

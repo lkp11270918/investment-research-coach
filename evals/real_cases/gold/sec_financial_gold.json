@@ -1,0 +1,194 @@
+{
+  "SEC-AAPL-revenue": {
+    "metric_name": "revenue",
+    "period": "2025",
+    "value": 416161000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000320193-25-000079"
+  },
+  "SEC-AAPL-net_profit": {
+    "metric_name": "net_profit",
+    "period": "2025",
+    "value": 112010000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000320193-25-000079"
+  },
+  "SEC-AAPL-operating_cash_flow": {
+    "metric_name": "operating_cash_flow",
+    "period": "2025",
+    "value": 111482000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000320193-25-000079"
+  },
+  "SEC-AAPL-total_assets": {
+    "metric_name": "total_assets",
+    "period": "2025",
+    "value": 359241000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000320193-25-000079"
+  },
+  "SEC-AAPL-total_liabilities": {
+    "metric_name": "total_liabilities",
+    "period": "2025",
+    "value": 285508000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000320193-25-000079"
+  },
+  "SEC-WMT-revenue": {
+    "metric_name": "revenue",
+    "period": "2026",
+    "value": 706413000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000104169-26-000055"
+  },
+  "SEC-WMT-net_profit": {
+    "metric_name": "net_profit",
+    "period": "2026",
+    "value": 21893000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000104169-26-000055"
+  },
+  "SEC-WMT-operating_cash_flow": {
+    "metric_name": "operating_cash_flow",
+    "period": "2026",
+    "value": 41565000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000104169-26-000055"
+  },
+  "SEC-WMT-total_assets": {
+    "metric_name": "total_assets",
+    "period": "2026",
+    "value": 284668000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000104169-26-000055"
+  },
+  "SEC-JPM-revenue": {
+    "metric_name": "revenue",
+    "period": "2025",
+    "value": 182447000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0001628280-26-008131"
+  },
+  "SEC-JPM-net_profit": {
+    "metric_name": "net_profit",
+    "period": "2025",
+    "value": 57048000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0001628280-26-008131"
+  },
+  "SEC-JPM-operating_cash_flow": {
+    "metric_name": "operating_cash_flow",
+    "period": "2025",
+    "value": -147782000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0001628280-26-008131"
+  },
+  "SEC-JPM-total_assets": {
+    "metric_name": "total_assets",
+    "period": "2025",
+    "value": 4424900000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0001628280-26-008131"
+  },
+  "SEC-JPM-total_liabilities": {
+    "metric_name": "total_liabilities",
+    "period": "2025",
+    "value": 4062462000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0001628280-26-008131"
+  },
+  "SEC-PFE-revenue": {
+    "metric_name": "revenue",
+    "period": "2025",
+    "value": 62579000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000078003-26-000026"
+  },
+  "SEC-PFE-net_profit": {
+    "metric_name": "net_profit",
+    "period": "2025",
+    "value": 7771000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000078003-26-000026"
+  },
+  "SEC-PFE-operating_cash_flow": {
+    "metric_name": "operating_cash_flow",
+    "period": "2025",
+    "value": 11704000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000078003-26-000026"
+  },
+  "SEC-PFE-total_assets": {
+    "metric_name": "total_assets",
+    "period": "2025",
+    "value": 208160000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000078003-26-000026"
+  },
+  "SEC-PFE-total_liabilities": {
+    "metric_name": "total_liabilities",
+    "period": "2025",
+    "value": 121385000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000078003-26-000026"
+  },
+  "SEC-XOM-revenue": {
+    "metric_name": "revenue",
+    "period": "2025",
+    "value": 332238000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000034088-26-000045"
+  },
+  "SEC-XOM-net_profit": {
+    "metric_name": "net_profit",
+    "period": "2025",
+    "value": 28844000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000034088-26-000045"
+  },
+  "SEC-XOM-operating_cash_flow": {
+    "metric_name": "operating_cash_flow",
+    "period": "2025",
+    "value": 51970000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000034088-26-000045"
+  },
+  "SEC-XOM-total_assets": {
+    "metric_name": "total_assets",
+    "period": "2025",
+    "value": 448980000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000034088-26-000045"
+  },
+  "SEC-XOM-total_liabilities": {
+    "metric_name": "total_liabilities",
+    "period": "2025",
+    "value": 182354000000,
+    "unit": "USD",
+    "form": "10-K",
+    "accession": "0000034088-26-000045"
+  }
+}

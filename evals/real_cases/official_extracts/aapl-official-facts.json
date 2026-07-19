@@ -1,0 +1,71 @@
+{
+  "entityName": "Apple Inc.",
+  "cik": 320193,
+  "facts": [
+    {
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2025-10-31",
+      "start": "2024-09-29",
+      "end": "2025-09-27",
+      "val": 416161000000,
+      "accn": "0000320193-25-000079",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2025-10-31",
+      "start": "2024-09-29",
+      "end": "2025-09-27",
+      "val": 112010000000,
+      "accn": "0000320193-25-000079",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2025-10-31",
+      "start": "2024-09-29",
+      "end": "2025-09-27",
+      "val": 111482000000,
+      "accn": "0000320193-25-000079",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "Assets",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2025-10-31",
+      "start": null,
+      "end": "2025-09-27",
+      "val": 359241000000,
+      "accn": "0000320193-25-000079",
+      "frame": null
+    },
+    {
+      "tag": "Liabilities",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2025-10-31",
+      "start": null,
+      "end": "2025-09-27",
+      "val": 285508000000,
+      "accn": "0000320193-25-000079",
+      "frame": null
+    }
+  ]
+}

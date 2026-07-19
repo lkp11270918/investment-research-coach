@@ -44,9 +44,21 @@ class MultimodalNormalizationTest(unittest.TestCase):
 
     def test_image_numbers_are_cross_checked_against_tables(self) -> None:
         table = RawMaterial(title="财务表", content="营业收入 100 亿元", modality=MaterialModality.TABLE)
-        image = RawMaterial(title="图表", content="营收100", modality=MaterialModality.IMAGE, blocks=[ContentBlock(modality=MaterialModality.IMAGE, content="营业收入 100 亿元", extraction_method="vision_model")])
+        image = RawMaterial(title="图表", content="营收100", modality=MaterialModality.IMAGE, blocks=[ContentBlock(modality=MaterialModality.IMAGE, content="营业收入 100 亿元", extraction_method="vision_visible_data")])
         cross_check_multimodal_materials([table, image])
         self.assertTrue(any("其他材料" in warning for warning in image.parse_warnings))
+        self.assertIn("系统交叉核验", image.blocks[0].review_note or "")
+
+    def test_multimodal_coordinates_enter_evidence_as_unconfirmed(self) -> None:
+        from backend.agents import run_evidence_extractor
+        from backend.models import CompanyProfile, SourceDocument, SourceType, WorkflowState
+        block = ContentBlock(modality=MaterialModality.IMAGE, content="2025年营收100亿元", region={"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.1}, extraction_method="vision_visible_data", requires_confirmation=True)
+        source = SourceDocument(title="图表", source_type=SourceType.INDUSTRY_MATERIAL, modality=MaterialModality.IMAGE, content="图表", blocks=[block])
+        state = WorkflowState(company_profile=CompanyProfile(company_name="甲", industry="制造"), source_documents=[source])
+        run_evidence_extractor(state)
+        item = next(item for item in state.evidence_items if item.source_refs and item.source_refs[0].block_id == block.block_id)
+        self.assertEqual(item.source_refs[0].region["x"], 0.1)
+        self.assertEqual(item.verification_status.value, "to_be_verified")
 
 
 if __name__ == "__main__":

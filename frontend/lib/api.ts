@@ -6,6 +6,19 @@ export type FrontendMaterial = {
   content?: string
   file?: File
   files?: File[]
+  url?: string
+  publisher?: string
+  publishedAt?: string
+}
+
+export type IngestedWebMaterial = {
+  title: string
+  content: string
+  source_type: string
+  url?: string | null
+  publisher?: string | null
+  published_at?: string | null
+  parse_warnings: string[]
 }
 
 export type BackendMemoSection = {
@@ -24,6 +37,9 @@ export type BackendMemo = {
   disclaimer: string
   markdown?: string | null
 }
+
+export type MemoSuggestion = { suggestion_id: string; section_id: string; proposed_body: string; rationale: string; evidence_ids: string[]; status: string }
+export type MemoVersion = { memo_version_id: string; project_id: string; version: number; sections: BackendMemoSection[]; source_run_id?: string | null; created_by: string; change_summary?: string | null; gate_status: string; gate_issues: string[]; suggestions: MemoSuggestion[]; created_at: string }
 
 export type BackendFinding = {
   title: string
@@ -118,7 +134,32 @@ export type ProjectMaterial = {
   publisher?: string | null
   published_at?: string | null
   parse_warnings: string[]
+  blocks: Array<{
+    block_id: string
+    modality: string
+    content: string
+    extraction_method: string
+    requires_confirmation: boolean
+    review_status: string
+    review_note?: string | null
+    cross_check_status: string
+    cross_check_matches: string[]
+    region?: Record<string, number> | null
+    speaker?: string | null
+    start_seconds?: number | null
+    end_seconds?: number | null
+  }>
   created_at: string
+}
+
+export async function reviewMaterialBlock(projectId: string, materialId: string, blockId: string, confirmed: boolean): Promise<ProjectMaterial> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/materials/${materialId}/blocks/${blockId}`, {
+    method: 'PATCH',
+    headers: authHeaders(true),
+    body: JSON.stringify({ confirmed }),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
 }
 
 export type ResearchTask = {
@@ -130,6 +171,9 @@ export type ResearchTask = {
   priority: number
   status: string
   evidence_ids: string[]
+  completion_evidence_ids: string[]
+  completed_at?: string | null
+  updated_at: string
 }
 
 export type ResearchProjectDetail = { project: ResearchProjectSummary; timeline: ResearchRunSummary[]; materials: ProjectMaterial[] }
@@ -152,14 +196,24 @@ export type EvidenceGraphEdge = {
   relation: 'from_source' | 'supports' | 'contradicts' | 'depends_on' | 'duplicates' | 'mentions' | 'questioned_by'
   rationale?: string | null
   confidence: 'high' | 'medium' | 'low'
+  relation_source: string
+  model_name?: string | null
+  reviewed_by_user: boolean
+  user_review_note?: string | null
 }
 
 export type EvidenceGraph = {
+  version: number
+  parent_version?: number | null
   nodes: EvidenceGraphNode[]
   edges: EvidenceGraphEdge[]
   conflicts: string[]
+  change_summary?: string | null
+  removed_node_ids: string[]
   updated_at: string
 }
+export type ResearchQuality = { valuation_analysis: {status?:string; multiples?:Record<string,number>; scenarios?:Array<{name:string;estimated_value_per_share?:number|null;margin_of_safety_percent?:number|null}>; conclusion?:string}; financial_anomalies:Array<{anomaly_id:string;description:string;verification_question:string}>; evidence_graph_quality:{score?:number;traceability_rate?:number;verified_rate?:number;relation_coverage?:number;issues?:string[]} }
+export async function fetchResearchQuality(projectId:string):Promise<ResearchQuality>{ const response=await fetch(`${API_BASE_URL}/api/projects/${projectId}/research-quality`,{headers:authHeaders()}); if(!response.ok) throw new Error(await parseError(response)); return response.json() }
 
 export type ResearchQuestion = {
   question_id: string
@@ -171,13 +225,21 @@ export type ResearchQuestion = {
   missing_materials: string[]
   rationale?: string | null
   required_evidence_types: string[]
+  depends_on: string[]
+  generated_from: string
+  change_reason?: string | null
 }
 
 export type ResearchMap = {
   project_id: string
   industry: string
+  version: number
   questions: ResearchQuestion[]
   next_questions: string[]
+  core_variables: string[]
+  material_requests: string[]
+  planner_model: string
+  change_summary?: string | null
   completion_rate: number
   updated_at: string
 }
@@ -210,6 +272,7 @@ export type ThesisVersion = {
     relevant_counter_ids: string[]
   }
   created_at: string
+  evidence_graph_version?: number | null
 }
 
 export type DefenseTurn = {
@@ -234,8 +297,18 @@ export type DefenseSession = {
   turns: DefenseTurn[]
   overall_score?: number | null
   improvement_tasks: string[]
+  question_model: string
+  targeted_gaps: string[]
   created_at: string
   updated_at: string
+}
+
+export type ResearchJudgment = {
+  view_points: Array<{ point_type: string; topic: string; detail: string; evidence_ids: string[]; source_ids: string[]; assumption_difference?: string | null; buyer_verification_question?: string | null }>
+  red_team_challenges: Array<{ challenge_id: string; title: string; mechanism: string; severity: string; evidence_ids: string[]; missing_evidence: string[]; falsification_test: string; status: string }>
+  sell_side_source_count: number
+  independent_fact_count: number
+  unresolved_critical_count: number
 }
 
 export type CapabilityProfile = {
@@ -358,6 +431,16 @@ const sourceTypeByMaterialId: Record<string, string> = {
   notes: 'user_note',
 }
 
+export async function ingestWebUrl(url: string, materialId: string): Promise<IngestedWebMaterial> {
+  const response = await fetch(`${API_BASE_URL}/api/materials/ingest-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, source_type: sourceTypeByMaterialId[materialId] || 'other' }),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
 export async function analyzeCompany(input: {
   stockCode: string
   companyName: string
@@ -384,6 +467,9 @@ export async function analyzeCompany(input: {
       content: material.content || '',
       source_type: sourceTypeByMaterialId[material.id] || 'other',
       usage_rights_confirmed: true,
+      url: material.url,
+      publisher: material.publisher,
+      published_at: material.publishedAt,
     }))
   const fileMaterials = input.materials.flatMap(material => {
     const files = material.files?.length ? material.files : material.file ? [material.file] : []
@@ -520,8 +606,20 @@ export async function fetchResearchTasks(projectId: string): Promise<ResearchTas
   return response.json()
 }
 
+export async function updateResearchTask(projectId: string, taskId: string, status: 'open' | 'completed', evidenceIds: string[] = []): Promise<ResearchTask> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/tasks/${taskId}`, { method: 'PATCH', headers: authHeaders(true), body: JSON.stringify({ status, evidence_ids: evidenceIds }) })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
 export async function fetchEvidenceGraph(projectId: string): Promise<EvidenceGraph> {
   const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/evidence-graph`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchEvidenceGraphHistory(projectId: string): Promise<EvidenceGraph[]> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/evidence-graph/history`, { headers: authHeaders() })
   if (!response.ok) throw new Error(await parseError(response))
   return response.json()
 }
@@ -536,14 +634,60 @@ export async function reviewEvidenceNode(projectId: string, nodeId: string, veri
   return response.json()
 }
 
+export async function reviewEvidenceEdge(projectId: string, edgeId: string, relation: EvidenceGraphEdge['relation']): Promise<EvidenceGraph> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/evidence-graph/edges/${encodeURIComponent(edgeId)}`, {
+    method: 'PATCH',
+    headers: authHeaders(true),
+    body: JSON.stringify({ relation }),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
 export async function fetchResearchMap(projectId: string): Promise<ResearchMap> {
   const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/research-map`, { headers: authHeaders() })
   if (!response.ok) throw new Error(await parseError(response))
   return response.json()
 }
 
+export async function fetchResearchMapHistory(projectId: string): Promise<ResearchMap[]> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/research-map/history`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchResearchJudgment(projectId: string): Promise<ResearchJudgment> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/research-judgment`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
 export async function fetchThesisHistory(projectId: string): Promise<ThesisVersion[]> {
   const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/thesis`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchMemoVersions(projectId: string): Promise<MemoVersion[]> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/memo-versions`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function saveMemoVersion(projectId: string, sections: BackendMemoSection[], changeSummary: string, requestFormal: boolean): Promise<MemoVersion> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/memo-versions`, { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ sections, change_summary: changeSummary, request_formal: requestFormal }) })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function requestMemoSuggestions(projectId: string, memoVersionId: string): Promise<MemoVersion> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/memo-versions/${memoVersionId}/suggestions`, { method: 'POST', headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function decideMemoSuggestion(projectId: string, memoVersionId: string, suggestionId: string, status: 'accepted' | 'rejected'): Promise<MemoVersion> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/memo-versions/${memoVersionId}/suggestions/${suggestionId}`, { method: 'PATCH', headers: authHeaders(true), body: JSON.stringify({ status }) })
   if (!response.ok) throw new Error(await parseError(response))
   return response.json()
 }
@@ -585,6 +729,7 @@ export async function refreshCapabilityProfile(): Promise<CapabilityProfile> {
   if (!response.ok) throw new Error(await parseError(response))
   return response.json()
 }
+export async function fetchCurrentCapabilityProfile(): Promise<CapabilityProfile> { const response=await fetch(`${API_BASE_URL}/api/capability-profile/current`,{headers:authHeaders()}); if(!response.ok) throw new Error(await parseError(response)); return response.json() }
 
 export async function fetchCapabilityProfileHistory(): Promise<CapabilityProfile[]> {
   const response = await fetch(`${API_BASE_URL}/api/capability-profile/history`, { headers: authHeaders() })

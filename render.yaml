@@ -10,6 +10,8 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: APP_ENV
+        value: production
       - key: AUTH_SECRET_KEY
         generateValue: true
       - key: OPENAI_API_KEY
@@ -21,4 +23,12 @@ services:
       - key: LLM_TIMEOUT_SECONDS
         value: "60"
       - key: CORS_ALLOWED_ORIGIN_REGEX
-        value: "https://.*\\.vercel\\.app"
+        sync: false
+      - key: MAX_UPLOAD_BYTES
+        value: "26214400"
+      - key: MAX_FILES_PER_REQUEST
+        value: "20"
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "60"
+      - key: MAX_LLM_CALLS_PER_WORKFLOW
+        value: "20"

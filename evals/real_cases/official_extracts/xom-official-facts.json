@@ -1,0 +1,71 @@
+{
+  "entityName": "Exxon Mobil Corporation",
+  "cik": 34088,
+  "facts": [
+    {
+      "tag": "Revenues",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-18",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "val": 332238000000,
+      "accn": "0000034088-26-000045",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-18",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "val": 28844000000,
+      "accn": "0000034088-26-000045",
+      "frame": null
+    },
+    {
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-18",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "val": 51970000000,
+      "accn": "0000034088-26-000045",
+      "frame": "CY2025"
+    },
+    {
+      "tag": "Assets",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-18",
+      "start": null,
+      "end": "2025-12-31",
+      "val": 448980000000,
+      "accn": "0000034088-26-000045",
+      "frame": null
+    },
+    {
+      "tag": "Liabilities",
+      "unit": "USD",
+      "fy": 2025,
+      "fp": "FY",
+      "form": "10-K",
+      "filed": "2026-02-18",
+      "start": null,
+      "end": "2025-12-31",
+      "val": 182354000000,
+      "accn": "0000034088-26-000045",
+      "frame": null
+    }
+  ]
+}

@@ -507,7 +507,7 @@ export function MemoPanel({ companyName = '—', stockCode = '—', industry = '
   const evidenceById = new Map(evidenceItems.map(item => [item.evidence_id, item]))
 
   const handleDownload = () => {
-    const content = memo?.markdown || `# ${companyName}（${stockCode}）价值投资研究 Memo\n\n*本 Memo 由 Value Investing Research Coach 生成，不构成投资建议*\n\n---\n\n此为演示版本，完整内容包含 18 个章节。`
+    const content = memo?.markdown || `# ${companyName}（${stockCode}）价值投资研究 Memo\n\n*本 Memo 由 Value Investing Research Coach 生成，不构成投资建议*\n\n---\n\n当前尚未生成正式 Memo。`
     const blob = new Blob([content], { type: 'text/markdown' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -701,7 +701,7 @@ export function MemoPanel({ companyName = '—', stockCode = '—', industry = '
                 所有关键结论均标注来源类型 · 不构成投资建议 · 来源标注完整率 92%
               </p>
             </div>
-            <Badge className="bg-primary/15 text-primary border-primary/30 text-xs">积极关注</Badge>
+            <Badge className="bg-muted text-muted-foreground border-border text-xs">研究待完善</Badge>
           </div>
 
           <Accordion type="multiple" defaultValue={['overview', 'cashflow', 'dividend', 'valuetrap', 'view']} className="space-y-3">

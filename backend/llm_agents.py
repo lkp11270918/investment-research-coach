@@ -88,6 +88,7 @@ EVIDENCE_EXTRACTOR_PROMPT = (
 
 只抽取材料中明确出现的信息，不得根据常识补充。
 每条 evidence 必须引用一个已有 source_id，并尽量保留原文 excerpt。
+多模态内容必须同时返回 block_id；不得把 requires_confirmation=true 的内容标为 verified。
 
 category 只能使用：
 fact, financial_fact, management_opinion, sell_side_opinion, news_or_market_opinion, user_opinion, assumption, ai_reasoning, risk, verification_question
@@ -103,6 +104,7 @@ verified, partially_supported, unsupported, to_be_verified
       "category": "financial_fact",
       "statement": "string",
       "source_id": "SRC-...",
+      "block_id": "BLK-... or null",
       "excerpt": "string",
       "period": "string or null",
       "metric_name": "string or null",
@@ -379,7 +381,7 @@ MEMO_GENERATOR_PROMPT = (
 - 不得新增未提供的财务数字或事实。
 - 事实、观点、假设和 AI 推理要在表达上区分清楚。
 - 资料不足处必须降级表达。
-- To C 模式不得输出买入、卖出、增持、减持等评级；只能使用“积极关注/中性观察/谨慎观察/资料不足暂不评级”等研究训练标签。
+- To C 模式不得输出买入、卖出、增持、减持、目标价或任何替代性评级标签；只输出核心观点、证据、反证、假设、推翻条件、资料完整度和研究置信度。
 - 不得给交易指令或收益承诺。
 - 不得把高股息直接等同安全。
 - 不得把低估值直接等同安全边际。
@@ -592,6 +594,7 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
                         "period_covered": doc.period_covered,
                         "url": doc.url,
                         "content": doc.content[:6000],
+                        "blocks": [{"block_id": block.block_id, "content": block.content, "page": block.page, "sheet": block.sheet, "row": block.row, "region": block.region, "speaker": block.speaker, "start_seconds": block.start_seconds, "end_seconds": block.end_seconds, "extraction_method": block.extraction_method, "requires_confirmation": block.requires_confirmation, "review_status": block.review_status} for block in doc.blocks[:200] if block.review_status != "rejected"],
                     }
                     for doc in state.source_documents
                 ],
@@ -615,6 +618,8 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
         if source_id not in source_by_id:
             continue
         source = source_by_id[source_id]
+        block_id = str(raw.get("block_id") or "") or None
+        block = next((item for item in source.blocks if item.block_id == block_id), None) if block_id else None
         statement = str(raw.get("statement") or "")
         local_category, _ = classify_statement(statement)
         category = _category(raw.get("category")) if raw.get("category") else local_category
@@ -623,11 +628,21 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
                 source_id=source_id,
                 excerpt=raw.get("excerpt"),
                 url=source.url,
+                block_id=block.block_id if block else None,
+                region=block.region if block else None,
+                start_seconds=block.start_seconds if block else None,
+                end_seconds=block.end_seconds if block else None,
+                extraction_method=block.extraction_method if block else None,
+                requires_confirmation=bool(block and block.requires_confirmation),
             )
         ]
         status = _verification_status(raw.get("verification_status"))
         if category in {EvidenceCategory.FACT, EvidenceCategory.FINANCIAL_FACT} and not raw.get("excerpt"):
             status = VerificationStatus.TO_BE_VERIFIED
+        if block and (block.requires_confirmation or block.review_status == "pending"):
+            status = VerificationStatus.TO_BE_VERIFIED
+        if block and block.review_status == "rejected":
+            continue
         item = EvidenceItem(
             category=category,
             statement=statement,
@@ -645,6 +660,7 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
             continue
         evidence.append(item)
 
+    evidence.extend(_multimodal_block_evidence(state.source_documents, {item.source_refs[0].block_id for item in evidence if item.source_refs and item.source_refs[0].block_id}))
     state.evidence_items = evidence
     findings = [_finding(item) for item in result.get("findings", []) if isinstance(item, dict)]
     extracted_metric_names = {item.metric_name for item in evidence if item.category == EvidenceCategory.FINANCIAL_FACT and item.metric_name}
@@ -663,6 +679,18 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
         confidence=_confidence(result.get("confidence")),
         warnings=[str(item) for item in result.get("warnings", [])],
     )
+
+
+def _multimodal_block_evidence(documents: list[SourceDocument], existing_block_ids: set[str | None]) -> list[EvidenceItem]:
+    result: list[EvidenceItem] = []
+    for source in documents:
+        for block in source.blocks:
+            if block.block_id in existing_block_ids or block.review_status == "rejected" or block.modality.value not in {"image", "audio"}:
+                continue
+            category = EvidenceCategory.MANAGEMENT_OPINION if block.extraction_method.startswith("management_signal") or block.modality.value == "audio" else EvidenceCategory.FACT
+            status = VerificationStatus.VERIFIED if block.review_status == "confirmed" else VerificationStatus.TO_BE_VERIFIED
+            result.append(EvidenceItem(category=category, statement=block.content, source_refs=[SourceRef(source_id=source.source_id, excerpt=block.content, url=source.url, block_id=block.block_id, region=block.region, start_seconds=block.start_seconds, end_seconds=block.end_seconds, extraction_method=block.extraction_method, requires_confirmation=block.review_status != "confirmed")], confidence=Confidence.MEDIUM if status == VerificationStatus.VERIFIED else Confidence.LOW, verification_status=status, notes="多模态模型抽取；待确认内容不能进入正式结论。"))
+    return result
 
 
 def run_financial_quality_dividend_llm(state: WorkflowState, client: OpenAIClient | None = None) -> AgentOutput:

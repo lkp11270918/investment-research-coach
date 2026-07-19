@@ -26,11 +26,19 @@ def load_dotenv(path: Path | None = None) -> None:
 class Settings:
     openai_api_key: str | None
     openai_model: str
+    openai_small_model: str
+    openai_embedding_model: str
+    openai_nli_model: str
     openai_base_url: str
     use_llm_agents: bool
     llm_timeout_seconds: int
     database_url: str
     auth_secret_key: str
+    app_env: str
+    max_upload_bytes: int
+    max_files_per_request: int
+    rate_limit_per_minute: int
+    max_llm_calls_per_workflow: int
 
 
 def get_settings() -> Settings:
@@ -38,9 +46,17 @@ def get_settings() -> Settings:
     return Settings(
         openai_api_key=os.environ.get("OPENAI_API_KEY"),
         openai_model=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"),
+        openai_small_model=os.environ.get("OPENAI_SMALL_MODEL", "gpt-4.1-nano"),
+        openai_embedding_model=os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        openai_nli_model=os.environ.get("OPENAI_NLI_MODEL", "gpt-4.1-nano"),
         openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
         use_llm_agents=os.environ.get("USE_LLM_AGENTS", "true").lower() not in {"0", "false", "no"},
         llm_timeout_seconds=int(os.environ.get("LLM_TIMEOUT_SECONDS", "60")),
         database_url=os.environ.get("DATABASE_URL", f"sqlite:///{PROJECT_ROOT / 'data' / 'app.db'}"),
         auth_secret_key=os.environ.get("AUTH_SECRET_KEY", "dev-only-change-this-secret"),
+        app_env=os.environ.get("APP_ENV", "development"),
+        max_upload_bytes=int(os.environ.get("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024))),
+        max_files_per_request=int(os.environ.get("MAX_FILES_PER_REQUEST", "20")),
+        rate_limit_per_minute=int(os.environ.get("RATE_LIMIT_PER_MINUTE", "60")),
+        max_llm_calls_per_workflow=int(os.environ.get("MAX_LLM_CALLS_PER_WORKFLOW", "20")),
     )

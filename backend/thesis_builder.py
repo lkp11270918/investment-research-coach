@@ -10,8 +10,10 @@ PROHIBITED_PUBLIC_LABELS = ("买入", "卖出", "增持", "减持", "overweight"
 def assess_thesis(draft: ThesisDraft, graph: EvidenceGraph) -> ThesisAssessment:
     issues: list[str] = []
     evidence_nodes = {node.evidence_id: node for node in graph.nodes if node.evidence_id}
-    valid_support = [item for item in draft.supporting_evidence_ids if item in evidence_nodes]
-    valid_counter = [item for item in draft.counter_evidence_ids if item in evidence_nodes]
+    selected_support = [item for item in draft.supporting_evidence_ids if item in evidence_nodes]
+    selected_counter = [item for item in draft.counter_evidence_ids if item in evidence_nodes]
+    valid_support = [item for item in selected_support if evidence_nodes[item].verification_status.value in {"verified", "partially_supported"}]
+    valid_counter = [item for item in selected_counter if evidence_nodes[item].verification_status.value in {"verified", "partially_supported"}]
     thesis_context = " ".join([draft.core_view, *(variable.name + " " + variable.rationale for variable in draft.core_variables), *draft.assumptions])
     relevant_support = [item for item in valid_support if _relevance(thesis_context, evidence_nodes[item].label) >= 0.2]
     relevant_counter = [item for item in valid_counter if evidence_nodes[item].node_type in {"risk", "verification_question"} or _has_contradiction(item, valid_support, graph) or _relevance(thesis_context, evidence_nodes[item].label) >= 0.2]
@@ -47,6 +49,13 @@ def assess_thesis(draft: ThesisDraft, graph: EvidenceGraph) -> ThesisAssessment:
     repetition = bool(valid_support) and set(valid_support).issubset(sell_side_ids)
     if repetition:
         issues.append("支持证据全部来自卖方观点，存在卖方复读风险")
+    if selected_support and len(valid_support) < len(selected_support):
+        issues.append("部分支持证据尚未确认，不能用于正式 Thesis")
+    if selected_counter and len(valid_counter) < len(selected_counter):
+        issues.append("部分反证尚未确认，不能用于正式 Thesis")
+    critical_open = [node.label for node in graph.nodes if node.node_type == "red_team_challenge" and node.metadata.get("severity") == "critical" and node.metadata.get("status") == "open"]
+    if critical_open:
+        issues.append("存在尚未解决的关键反证：" + "；".join(critical_open[:3]))
     required_parts = 8
     completed = sum([bool(relevant_support), bool(relevant_counter), bool(draft.assumptions), bool(draft.falsification_conditions), bool(draft.unknowns), len(draft.core_variables) == 3, len(variable_ids) >= 3, len(draft.scenarios) >= 3])
     coverage = round(completed / required_parts * 100, 1)

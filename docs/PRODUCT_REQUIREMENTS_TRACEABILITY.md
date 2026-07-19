@@ -1,8 +1,9 @@
 # To C Product Requirements Traceability
 
 This matrix is the release authority below the PRD and the locked product
-guardrails. A feature is complete only when its user workflow and quality gate
-both pass. The presence of a model call, API, table, or screen is not acceptance.
+guardrails. A feature is complete only when its user workflow and real-world
+quality gate both pass. The presence of a model call, API, table, screen, or
+synthetic regression test is not acceptance.
 
 | ID | Product outcome | Required evidence | Release threshold | Stage |
 |---|---|---|---|---|
@@ -36,4 +37,5 @@ both pass. The presence of a model call, API, table, or screen is not acceptance
    weakening an existing test.
 5. Final release additionally requires desktop browser verification of the full
    project lifecycle and a clean production build.
-
+6. Synthetic regression protects engineering behaviour but cannot satisfy a
+   real-world accuracy threshold.

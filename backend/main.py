@@ -5,16 +5,23 @@ import os
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from .config import get_settings
+from .production import ProductionGuardMiddleware, production_configuration_report
 
-from .auth import authenticate_user, create_access_token, create_user, get_current_user, get_optional_current_user, init_auth_db, to_auth_user
+from .auth import authenticate_user, create_access_token, create_user, delete_user_account, get_current_user, get_optional_current_user, init_auth_db, to_auth_user
 from .file_parsers import FileParseError, cross_check_multimodal_materials, parse_uploaded_file
-from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, CapabilityProfile, DefenseAnswerRequest, DefenseSession, EvidenceGraph, EvidenceNodeReview, HealthResponse, LoginRequest, ProjectMaterial, RegisterRequest, ResearchMap, ResearchProjectCreate, ResearchProjectDetail, ResearchProjectSummary, ResearchProjectUpdate, ResearchRunDetail, ResearchRunSummary, ResearchTask, ReviewRequest, ThesisDraft, ThesisVersion
+from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, CapabilityProfile, DefenseAnswerRequest, DefenseSession, EvidenceEdgeReview, EvidenceGraph, EvidenceNodeReview, HealthResponse, LoginRequest, MaterialBlockReview, MemoSuggestionDecision, MemoVersion, MemoVersionCreate, ProjectMaterial, RawMaterial, RegisterRequest, ResearchBehaviorEvent, ResearchJudgment, ResearchMap, ResearchProjectCreate, ResearchProjectDetail, ResearchProjectSummary, ResearchProjectUpdate, ResearchRunDetail, ResearchRunSummary, ResearchTask, ResearchTaskUpdate, ReviewRequest, ThesisDraft, ThesisVersion, UrlIngestRequest
 from .research_map import generate_research_map
-from .storage import create_research_project, get_defense_session, get_project_evidence_graph, get_research_project, get_user_run, init_research_runs_db, list_capability_profiles, list_defense_sessions, list_project_materials, list_research_projects, list_research_tasks, list_thesis_versions, list_user_runs, project_belongs_to_user, review_project_evidence_node, save_capability_profile, save_defense_session, save_thesis_version, save_user_run, sync_defense_tasks, update_research_project
+from .storage import create_research_project, decide_memo_suggestion, get_defense_session, get_project_evidence_graph, get_research_project, get_user_run, init_research_runs_db, list_behavior_events, list_capability_profiles, list_defense_sessions, list_evidence_graph_versions, list_memo_versions, list_project_materials, list_research_map_versions, list_research_projects, list_research_tasks, list_thesis_versions, list_user_runs, project_belongs_to_user, record_behavior_event, review_evidence_for_material_block, review_project_evidence_edge, review_project_evidence_node, review_project_material_block, save_capability_profile, save_defense_session, save_memo_version, save_research_map_version, save_thesis_version, save_user_run, sync_defense_tasks, update_memo_suggestions, update_research_project, update_research_task, upsert_research_tasks
 from .capability_profile import build_capability_profile
 from .defense import answer_defense, start_defense
 from .thesis_builder import assess_thesis
 from .workflow_runner import run_analysis_workflow, run_review_workflow
+from .web_ingestion import WebIngestionError, ingest_web_url
+from .memo_coauthor import generate_memo_suggestions
+from .llm_client import OpenAIClient
+from .task_feedback import tasks_from_memo, tasks_from_research_state, tasks_from_thesis
+from .research_quality import assess_graph_quality
 
 
 app = FastAPI(
@@ -43,10 +50,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(ProductionGuardMiddleware)
 
 
 @app.on_event("startup")
 def startup() -> None:
+    report = production_configuration_report(get_settings())
+    if get_settings().app_env == "production" and not report["passed"]:
+        raise RuntimeError("unsafe production configuration: " + "; ".join(report["errors"]))
     init_auth_db()
     init_research_runs_db()
 
@@ -54,6 +65,19 @@ def startup() -> None:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
+
+
+@app.get("/ready")
+def ready() -> dict:
+    return production_configuration_report(get_settings())
+
+
+@app.post("/api/materials/ingest-url", response_model=RawMaterial)
+def ingest_url(request: UrlIngestRequest) -> RawMaterial:
+    try:
+        return ingest_web_url(request.url, request.source_type)
+    except WebIngestionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/auth/register", response_model=AuthResponse)
@@ -73,6 +97,11 @@ def login(request: LoginRequest) -> AuthResponse:
 @app.get("/api/me", response_model=AuthUser)
 def me(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
     return current_user
+
+
+@app.delete("/api/me", status_code=204)
+def delete_me(current_user: AuthUser = Depends(get_current_user)) -> None:
+    delete_user_account(current_user.user_id)
 
 
 def _validate_project_access(current_user: AuthUser | None, project_id: str | None) -> None:
@@ -115,9 +144,14 @@ async def analyze_files(
 
     if material_ids and len(material_ids) != len(files):
         raise HTTPException(status_code=400, detail="material_ids 数量必须与 files 数量一致")
+    settings = get_settings()
+    if len(files) > settings.max_files_per_request:
+        raise HTTPException(status_code=413, detail=f"单次最多上传 {settings.max_files_per_request} 个文件")
 
     for index, upload in enumerate(files):
         data = await upload.read()
+        if len(data) > settings.max_upload_bytes:
+            raise HTTPException(status_code=413, detail=f"文件 {upload.filename or index} 超过大小限制")
         material_id = material_ids[index] if index < len(material_ids) else None
         try:
             material = parse_uploaded_file(
@@ -199,6 +233,16 @@ def project_materials(project_id: str, current_user: AuthUser = Depends(get_curr
     return list_project_materials(current_user.user_id, project_id)
 
 
+@app.patch("/api/projects/{project_id}/materials/{material_id}/blocks/{block_id}", response_model=ProjectMaterial)
+def review_material_block(project_id: str, material_id: str, block_id: str, request: MaterialBlockReview, current_user: AuthUser = Depends(get_current_user)) -> ProjectMaterial:
+    material = review_project_material_block(current_user.user_id, project_id, material_id, block_id, request)
+    if material is None:
+        raise HTTPException(status_code=404, detail="未找到该材料或内容块")
+    review_evidence_for_material_block(current_user.user_id, project_id, block_id, request.confirmed, request.note)
+    record_behavior_event(ResearchBehaviorEvent(user_id=current_user.user_id, project_id=project_id, action="review_multimodal_inference", dimension="evidence_awareness", outcome="confirmed" if request.confirmed else "rejected", score=85, object_type="content_block", object_id=block_id))
+    return material
+
+
 @app.patch("/api/projects/{project_id}", response_model=ResearchProjectDetail)
 def update_project(
     project_id: str,
@@ -234,11 +278,28 @@ def project_evidence_graph(project_id: str, current_user: AuthUser = Depends(get
     return graph
 
 
+@app.get("/api/projects/{project_id}/evidence-graph/history", response_model=list[EvidenceGraph])
+def project_evidence_graph_history(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> list[EvidenceGraph]:
+    if not project_belongs_to_user(current_user.user_id, project_id):
+        raise HTTPException(status_code=404, detail="未找到该研究项目")
+    return list_evidence_graph_versions(current_user.user_id, project_id)
+
+
 @app.patch("/api/projects/{project_id}/evidence-graph/nodes/{node_id}", response_model=EvidenceGraph)
 def review_evidence_node(project_id: str, node_id: str, request: EvidenceNodeReview, current_user: AuthUser = Depends(get_current_user)) -> EvidenceGraph:
     graph = review_project_evidence_node(current_user.user_id, project_id, node_id, request)
     if graph is None:
         raise HTTPException(status_code=404, detail="未找到该项目或证据节点")
+    record_behavior_event(ResearchBehaviorEvent(user_id=current_user.user_id, project_id=project_id, action="review_evidence", dimension="evidence_awareness", outcome=request.verification_status.value, score=90 if request.verification_status.value in {"verified", "unsupported"} else 70, object_type="evidence_node", object_id=node_id))
+    return graph
+
+
+@app.patch("/api/projects/{project_id}/evidence-graph/edges/{edge_id}", response_model=EvidenceGraph)
+def review_evidence_edge(project_id: str, edge_id: str, request: EvidenceEdgeReview, current_user: AuthUser = Depends(get_current_user)) -> EvidenceGraph:
+    graph = review_project_evidence_edge(current_user.user_id, project_id, edge_id, request)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="未找到该项目或证据关系")
+    record_behavior_event(ResearchBehaviorEvent(user_id=current_user.user_id, project_id=project_id, action="correct_evidence_relation", dimension="evidence_awareness", outcome=request.relation.value, score=90, object_type="evidence_edge", object_id=edge_id))
     return graph
 
 
@@ -249,7 +310,45 @@ def project_research_map(project_id: str, current_user: AuthUser = Depends(get_c
         raise HTTPException(status_code=404, detail="未找到该研究项目")
     graph = get_project_evidence_graph(current_user.user_id, project_id) or EvidenceGraph()
     project = detail.project
-    return generate_research_map(project_id, project.company_profile.industry, graph, company_name=project.company_profile.company_name, research_objective=project.research_objective, initial_view=project.initial_view, key_question=project.key_question)
+    history = list_research_map_versions(current_user.user_id, project_id)
+    generated = generate_research_map(project_id, project.company_profile.industry, graph, company_name=project.company_profile.company_name, research_objective=project.research_objective, investment_horizon=project.investment_horizon, initial_view=project.initial_view, key_question=project.key_question, previous=history[-1] if history else None)
+    return save_research_map_version(current_user.user_id, generated)
+
+
+@app.get("/api/projects/{project_id}/research-map/history", response_model=list[ResearchMap])
+def project_research_map_history(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> list[ResearchMap]:
+    if not project_belongs_to_user(current_user.user_id, project_id):
+        raise HTTPException(status_code=404, detail="未找到该研究项目")
+    return list_research_map_versions(current_user.user_id, project_id)
+
+
+@app.get("/api/projects/{project_id}/research-judgment", response_model=ResearchJudgment)
+def project_research_judgment(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> ResearchJudgment:
+    detail = get_research_project(current_user.user_id, project_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="未找到该研究项目")
+    if not detail.timeline:
+        return ResearchJudgment()
+    latest = get_user_run(current_user.user_id, detail.timeline[-1].run_id)
+    return latest.state.research_judgment if latest else ResearchJudgment()
+
+@app.get("/api/projects/{project_id}/research-quality")
+def project_research_quality(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> dict:
+    detail = get_research_project(current_user.user_id, project_id)
+    if not detail: raise HTTPException(status_code=404, detail="未找到该研究项目")
+    latest = get_user_run(current_user.user_id, detail.timeline[-1].run_id) if detail.timeline else None
+    graph = get_project_evidence_graph(current_user.user_id, project_id) or EvidenceGraph()
+    live_quality = assess_graph_quality(graph)
+    if not latest: return {"valuation_analysis": {}, "financial_anomalies": [], "evidence_graph_quality": live_quality.model_dump(mode="json")}
+    return {"valuation_analysis": latest.state.valuation_analysis.model_dump(mode="json"), "financial_anomalies": [item.model_dump(mode="json") for item in latest.state.financial_anomalies], "evidence_graph_quality": live_quality.model_dump(mode="json")}
+
+@app.get("/api/capability-profile/current", response_model=CapabilityProfile)
+def current_capability_profile(current_user: AuthUser = Depends(get_current_user)) -> CapabilityProfile:
+    run_details = [detail for summary in list_user_runs(current_user.user_id, limit=100) if (detail := get_user_run(current_user.user_id, summary.run_id))]
+    projects = list_research_projects(current_user.user_id, include_archived=True)
+    theses = [thesis for project in projects for thesis in list_thesis_versions(current_user.user_id, project.project_id)]
+    defenses = list_defense_sessions(current_user.user_id)
+    return build_capability_profile(current_user.user_id, run_details, theses, defenses, list_behavior_events(current_user.user_id))
 
 
 @app.post("/api/projects/{project_id}/thesis", response_model=ThesisVersion)
@@ -258,8 +357,11 @@ def create_thesis_version(project_id: str, request: ThesisDraft, current_user: A
         raise HTTPException(status_code=404, detail="未找到该研究项目")
     graph = get_project_evidence_graph(current_user.user_id, project_id) or EvidenceGraph()
     history = list_thesis_versions(current_user.user_id, project_id)
-    thesis = ThesisVersion(project_id=project_id, version=len(history) + 1, draft=request, assessment=assess_thesis(request, graph))
-    return save_thesis_version(current_user.user_id, thesis)
+    thesis = ThesisVersion(project_id=project_id, version=len(history) + 1, draft=request, assessment=assess_thesis(request, graph), evidence_graph_version=graph.version)
+    saved = save_thesis_version(current_user.user_id, thesis)
+    upsert_research_tasks(current_user.user_id, tasks_from_thesis(saved), project_id)
+    record_behavior_event(ResearchBehaviorEvent(user_id=current_user.user_id, project_id=project_id, action="save_thesis", dimension="counter_evidence", outcome=saved.assessment.status.value, score=saved.assessment.evidence_coverage, object_type="thesis", object_id=saved.thesis_id, metadata={"error_code": saved.assessment.issues[0] if saved.assessment.issues else ""}))
+    return saved
 
 
 @app.get("/api/projects/{project_id}/thesis", response_model=list[ThesisVersion])
@@ -269,13 +371,45 @@ def thesis_history(project_id: str, current_user: AuthUser = Depends(get_current
     return list_thesis_versions(current_user.user_id, project_id)
 
 
+@app.get("/api/projects/{project_id}/memo-versions", response_model=list[MemoVersion])
+def memo_versions(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> list[MemoVersion]:
+    if not project_belongs_to_user(current_user.user_id, project_id): raise HTTPException(status_code=404, detail="未找到该研究项目")
+    return list_memo_versions(current_user.user_id, project_id)
+
+
+@app.post("/api/projects/{project_id}/memo-versions", response_model=MemoVersion)
+def create_memo_version(project_id: str, request: MemoVersionCreate, current_user: AuthUser = Depends(get_current_user)) -> MemoVersion:
+    if not project_belongs_to_user(current_user.user_id, project_id): raise HTTPException(status_code=404, detail="未找到该研究项目")
+    version = save_memo_version(current_user.user_id, project_id, request)
+    upsert_research_tasks(current_user.user_id, tasks_from_memo(version), project_id)
+    record_behavior_event(ResearchBehaviorEvent(user_id=current_user.user_id, project_id=project_id, action="save_memo_version", dimension="memo_writing", outcome=version.gate_status, score=100 if version.gate_status == "formal" else 45 if version.gate_issues else 75, object_type="memo_version", object_id=version.memo_version_id, metadata={"error_code": version.gate_issues[0] if version.gate_issues else ""}))
+    return version
+
+
+@app.post("/api/projects/{project_id}/memo-versions/{memo_version_id}/suggestions", response_model=MemoVersion)
+def create_memo_suggestions(project_id: str, memo_version_id: str, current_user: AuthUser = Depends(get_current_user)) -> MemoVersion:
+    version = next((item for item in list_memo_versions(current_user.user_id, project_id) if item.memo_version_id == memo_version_id), None)
+    if not version: raise HTTPException(status_code=404, detail="未找到该 Memo 版本")
+    graph = get_project_evidence_graph(current_user.user_id, project_id) or EvidenceGraph()
+    return update_memo_suggestions(current_user.user_id, version, generate_memo_suggestions(version.sections, graph, OpenAIClient()))
+
+
+@app.patch("/api/projects/{project_id}/memo-versions/{memo_version_id}/suggestions/{suggestion_id}", response_model=MemoVersion)
+def update_memo_suggestion(project_id: str, memo_version_id: str, suggestion_id: str, request: MemoSuggestionDecision, current_user: AuthUser = Depends(get_current_user)) -> MemoVersion:
+    version = decide_memo_suggestion(current_user.user_id, project_id, memo_version_id, suggestion_id, request.status)
+    if not version: raise HTTPException(status_code=400, detail="未找到建议或状态无效")
+    record_behavior_event(ResearchBehaviorEvent(user_id=current_user.user_id, project_id=project_id, action="decide_memo_suggestion", dimension="memo_writing", outcome=request.status, score=80, object_type="memo_suggestion", object_id=suggestion_id))
+    return version
+
+
 @app.post("/api/projects/{project_id}/defense", response_model=DefenseSession)
 def create_defense(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> DefenseSession:
     theses = list_thesis_versions(current_user.user_id, project_id)
     if not theses:
         raise HTTPException(status_code=400, detail="请先完成 Thesis Builder")
     graph = get_project_evidence_graph(current_user.user_id, project_id) or EvidenceGraph()
-    return save_defense_session(current_user.user_id, start_defense(project_id, theses[-1], graph))
+    prior_errors = [str(event.metadata.get("error_code")) for event in list_behavior_events(current_user.user_id) if event.project_id != project_id and event.metadata.get("error_code")]
+    return save_defense_session(current_user.user_id, start_defense(project_id, theses[-1], graph, prior_errors=prior_errors[-10:]))
 
 
 @app.post("/api/defense/{session_id}/answer", response_model=DefenseSession)
@@ -290,6 +424,10 @@ def submit_defense_answer(session_id: str, request: DefenseAnswerRequest, curren
     except ValueError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
     saved = save_defense_session(current_user.user_id, session)
     sync_defense_tasks(current_user.user_id, saved)
+    latest = saved.turns[-2] if saved.turns and saved.turns[-1].answer is None and len(saved.turns) > 1 else saved.turns[-1]
+    if latest.score is not None:
+        dimension = {"risk_manager":"counter_evidence","financial_researcher":"financial_analysis","industry_researcher":"industry_understanding","portfolio_manager":"thesis_reasoning","investment_director":"valuation"}.get(latest.role.value, "defense")
+        record_behavior_event(ResearchBehaviorEvent(user_id=current_user.user_id, project_id=saved.project_id, action="answer_defense", dimension=dimension, outcome="passed" if latest.passed else "needs_improvement", score=latest.score, object_type="defense_turn", object_id=latest.turn_id, metadata={"error_code": latest.feedback or ""}))
     return saved
 
 
@@ -302,7 +440,24 @@ def project_defenses(project_id: str, current_user: AuthUser = Depends(get_curre
 @app.get("/api/projects/{project_id}/tasks", response_model=list[ResearchTask])
 def project_tasks(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> list[ResearchTask]:
     if not project_belongs_to_user(current_user.user_id, project_id): raise HTTPException(status_code=404, detail="未找到该研究项目")
-    return list_research_tasks(current_user.user_id, project_id)
+    detail = get_research_project(current_user.user_id, project_id)
+    graph = get_project_evidence_graph(current_user.user_id, project_id) or EvidenceGraph()
+    project = detail.project
+    history = list_research_map_versions(current_user.user_id, project_id)
+    research_map = generate_research_map(project_id, project.company_profile.industry, graph, company_name=project.company_profile.company_name, research_objective=project.research_objective, investment_horizon=project.investment_horizon, initial_view=project.initial_view, key_question=project.key_question, previous=history[-1] if history else None)
+    save_research_map_version(current_user.user_id, research_map)
+    return upsert_research_tasks(current_user.user_id, tasks_from_research_state(project_id, research_map, graph), project_id)
+
+
+@app.patch("/api/projects/{project_id}/tasks/{task_id}", response_model=ResearchTask)
+def update_project_task(project_id: str, task_id: str, request: ResearchTaskUpdate, current_user: AuthUser = Depends(get_current_user)) -> ResearchTask:
+    try:
+        task = update_research_task(current_user.user_id, project_id, task_id, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if task is None: raise HTTPException(status_code=404, detail="未找到研究任务")
+    record_behavior_event(ResearchBehaviorEvent(user_id=current_user.user_id, project_id=project_id, action="complete_research_task" if task.status == "completed" else "reopen_research_task", dimension="evidence_awareness", outcome=task.status, score=95 if task.status == "completed" else 60, object_type="research_task", object_id=task.task_id))
+    return task
 
 
 @app.post("/api/capability-profile", response_model=CapabilityProfile)
@@ -311,7 +466,12 @@ def refresh_capability_profile(current_user: AuthUser = Depends(get_current_user
     projects = list_research_projects(current_user.user_id, include_archived=True)
     theses = [thesis for project in projects for thesis in list_thesis_versions(current_user.user_id, project.project_id)]
     defenses = list_defense_sessions(current_user.user_id)
-    return save_capability_profile(build_capability_profile(current_user.user_id, run_details, theses, defenses))
+    return save_capability_profile(build_capability_profile(current_user.user_id, run_details, theses, defenses, list_behavior_events(current_user.user_id)))
+
+
+@app.get("/api/behavior-events", response_model=list[ResearchBehaviorEvent])
+def behavior_events(limit: int = Query(default=200, ge=1, le=1000), current_user: AuthUser = Depends(get_current_user)) -> list[ResearchBehaviorEvent]:
+    return list_behavior_events(current_user.user_id, limit)
 
 
 @app.get("/api/capability-profile/history", response_model=list[CapabilityProfile])
