@@ -1,18 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, FileSearch, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { AlertTriangle, Check, FileSearch, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import {
   answerDefense,
   fetchDefenseSessions,
   fetchEvidenceGraph,
+  fetchResearchProject,
   fetchResearchMap,
   fetchResearchProjects,
+  fetchResearchTasks,
   fetchThesisHistory,
   reviewEvidenceNode,
   saveThesis,
@@ -21,7 +23,9 @@ import {
   type EvidenceGraph,
   type EvidenceGraphNode,
   type ResearchMap,
+  type ProjectMaterial,
   type ResearchProjectSummary,
+  type ResearchTask,
   type ThesisDraft,
   type ThesisVersion,
 } from '@/lib/api'
@@ -31,6 +35,10 @@ interface ResearchWorkspacePanelProps {
   projectId: string | null
   companyName?: string
   onLogin: () => void
+  section?: 'map' | 'evidence' | 'thesis' | 'defense'
+  onNewResearch?: () => void
+  onAddMaterials?: (projectId: string, company: { stockCode: string; companyName: string; industry: string }) => void
+  onProjectChange?: (projectId: string) => void
 }
 
 const emptyDraft: ThesisDraft = {
@@ -41,6 +49,7 @@ const emptyDraft: ThesisDraft = {
   assumptions: [],
   falsification_conditions: [],
   unknowns: [],
+  scenarios: ['bull', 'base', 'bear'].map(name => ({ name, assumptions: [], outcome: '', trigger_conditions: [] })),
   user_internal_label: '观察',
 }
 
@@ -53,18 +62,21 @@ const questionStatus = {
 
 const roleLabels = {
   portfolio_manager: '基金经理',
+  investment_director: '投资总监',
   industry_researcher: '行业研究员',
   financial_researcher: '财务研究员',
   risk_manager: '风控负责人',
 } as const
 
-export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onLogin }: ResearchWorkspacePanelProps) {
+export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onLogin, section = 'map', onNewResearch, onAddMaterials, onProjectChange }: ResearchWorkspacePanelProps) {
   const [researchMap, setResearchMap] = useState<ResearchMap | null>(null)
   const [projects, setProjects] = useState<ResearchProjectSummary[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(projectId)
   const [graph, setGraph] = useState<EvidenceGraph | null>(null)
   const [theses, setTheses] = useState<ThesisVersion[]>([])
   const [defenses, setDefenses] = useState<DefenseSession[]>([])
+  const [materials, setMaterials] = useState<ProjectMaterial[]>([])
+  const [tasks, setTasks] = useState<ResearchTask[]>([])
   const [draft, setDraft] = useState<ThesisDraft>(emptyDraft)
   const [answer, setAnswer] = useState('')
   const [answerEvidenceIds, setAnswerEvidenceIds] = useState<string[]>([])
@@ -100,13 +112,17 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
       fetchEvidenceGraph(selectedProjectId),
       fetchThesisHistory(selectedProjectId),
       fetchDefenseSessions(selectedProjectId),
+      fetchResearchProject(selectedProjectId),
+      fetchResearchTasks(selectedProjectId),
     ])
-      .then(([nextMap, nextGraph, nextTheses, nextDefenses]) => {
+      .then(([nextMap, nextGraph, nextTheses, nextDefenses, detail, nextTasks]) => {
         if (cancelled) return
         setResearchMap(nextMap)
         setGraph(nextGraph)
         setTheses(nextTheses)
         setDefenses(nextDefenses)
+        setMaterials(detail.materials)
+        setTasks(nextTasks)
         if (nextTheses.length) setDraft(nextTheses[nextTheses.length - 1].draft)
       })
       .catch(error => !cancelled && setError(error instanceof Error ? error.message : '研究工作台加载失败'))
@@ -189,10 +205,12 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
           <p className="mt-1 text-sm text-muted-foreground">从研究问题、证据确认到投资逻辑和答辩的完整训练过程。</p>
         </div>
         <div className="flex items-center gap-2">
+          {onNewResearch && <Button variant="outline" size="sm" onClick={onNewResearch}><Plus className="h-3.5 w-3.5" />新建研究</Button>}
+          {onAddMaterials && activeProject && <Button variant="outline" size="sm" onClick={() => onAddMaterials(activeProject.project_id, { stockCode: activeProject.company_profile.ticker || '', companyName: activeProject.company_profile.company_name, industry: activeProject.company_profile.industry })}><FileSearch className="h-3.5 w-3.5" />补充材料</Button>}
           {projects.length > 1 && (
             <select
               value={selectedProjectId}
-              onChange={event => setSelectedProjectId(event.target.value)}
+              onChange={event => { setSelectedProjectId(event.target.value); onProjectChange?.(event.target.value) }}
               className="h-8 rounded-md border border-border bg-secondary px-3 text-xs text-foreground outline-none focus:border-primary"
               aria-label="选择研究项目"
             >
@@ -207,13 +225,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
       {loading ? (
         <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">正在加载研究项目...</div>
       ) : (
-        <Tabs defaultValue="map">
-          <TabsList variant="line" className="mb-5 border-b border-border">
-            <TabsTrigger value="map">研究地图</TabsTrigger>
-            <TabsTrigger value="evidence">证据图谱</TabsTrigger>
-            <TabsTrigger value="thesis">Thesis</TabsTrigger>
-            <TabsTrigger value="defense">投委会答辩</TabsTrigger>
-          </TabsList>
+        <Tabs value={section}>
 
           <TabsContent value="map">
             <div className="mb-4 rounded-lg border border-border bg-card p-5">
@@ -252,6 +264,10 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
           </TabsContent>
 
           <TabsContent value="evidence">
+            <div className="mb-5 rounded-lg border border-border bg-card p-4">
+              <div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-foreground">项目资料库</div><span className="font-mono text-xs text-muted-foreground">{materials.length} 份</span></div>
+              <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">{materials.map(material => <div key={material.material_id} className="rounded-md border border-border bg-secondary/20 p-3"><div className="truncate text-xs font-medium text-foreground">{material.title}</div><div className="mt-1 flex gap-2 text-[10px] text-muted-foreground"><span>v{material.version}</span><span>{material.source_type}</span><span>{material.modality}</span></div>{material.period_covered && <div className="mt-1 text-[10px] text-muted-foreground">期间：{material.period_covered}</div>}{material.parse_warnings.map(item => <div key={item} className="mt-1 line-clamp-2 text-[10px] text-warning">{item}</div>)}</div>)}</div>
+            </div>
             {!!graph?.conflicts.length && (
               <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
                 <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive"><AlertTriangle className="h-4 w-4" />来源冲突</div>
@@ -269,6 +285,8 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
                         <span className="font-mono text-[10px] text-muted-foreground">{node.evidence_id}</span>
                       </div>
                       <div className="text-sm leading-relaxed text-foreground">{node.label}</div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted-foreground">{Object.entries(node.metadata).filter(([key, value]) => key !== 'source_refs' && value != null && value !== '').slice(0, 5).map(([key, value]) => <span key={key}>{key}：{String(value)}</span>)}</div>
+                      {Array.isArray(node.metadata.source_refs) && node.metadata.source_refs.map((ref, index) => { const source = ref as Record<string, unknown>; return <div key={index} className="mt-2 rounded border border-border/60 bg-secondary/20 px-2 py-1.5 text-[10px] text-muted-foreground"><span className="font-mono">{String(source.source_id || '')}</span>{source.page ? ` · 第${source.page}页` : ''}{source.sheet ? ` · ${source.sheet}` : ''}{source.row_id ? ` · 第${source.row_id}行` : ''}{source.excerpt ? <div className="mt-1 line-clamp-2 text-foreground">{String(source.excerpt)}</div> : null}</div> })}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <button title="确认该证据" onClick={() => handleReview(node, 'verified')} className="rounded-md border border-border p-1.5 text-muted-foreground hover:border-success/40 hover:text-success"><Check className="h-3.5 w-3.5" /></button>
@@ -298,6 +316,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
                 <ListField label="关键假设" value={draft.assumptions} onChange={assumptions => setDraft({ ...draft, assumptions })} placeholder="每行一个结论成立的假设" />
                 <ListField label="推翻条件" value={draft.falsification_conditions} onChange={falsification_conditions => setDraft({ ...draft, falsification_conditions })} placeholder="每行一个可观察的推翻条件" />
                 <ListField label="当前未知" value={draft.unknowns} onChange={unknowns => setDraft({ ...draft, unknowns })} placeholder="每行一个仍然不知道的问题" />
+                <div className="grid grid-cols-3 gap-3">{draft.scenarios.map((scenario, index) => <div key={scenario.name} className="rounded-md border border-border bg-secondary/20 p-3"><div className="mb-2 text-xs font-medium text-foreground">{{ bull: '乐观情景', base: '基准情景', bear: '悲观情景' }[scenario.name] || scenario.name}</div><Textarea value={scenario.assumptions.join('\n')} onChange={event => setDraft({ ...draft, scenarios: draft.scenarios.map((item, i) => i === index ? { ...item, assumptions: event.target.value.split('\n').filter(Boolean) } : item) })} className="mb-2 min-h-20 bg-input text-xs" placeholder="关键假设" /><Textarea value={scenario.outcome} onChange={event => setDraft({ ...draft, scenarios: draft.scenarios.map((item, i) => i === index ? { ...item, outcome: event.target.value } : item) })} className="mb-2 min-h-20 bg-input text-xs" placeholder="可能结果" /><Textarea value={scenario.trigger_conditions.join('\n')} onChange={event => setDraft({ ...draft, scenarios: draft.scenarios.map((item, i) => i === index ? { ...item, trigger_conditions: event.target.value.split('\n').filter(Boolean) } : item) })} className="min-h-20 bg-input text-xs" placeholder="可观察触发条件" /></div>)}</div>
                 <Button onClick={handleSaveThesis} disabled={saving}>{saving ? '正在保存...' : `保存 Thesis v${theses.length + 1}`}</Button>
               </div>
               <div className="space-y-3">
@@ -306,6 +325,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
                     <div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold text-foreground">版本 {thesis.version}</span><Badge className={thesis.assessment.status === 'pass' ? 'border-success/30 bg-success/10 text-success' : 'border-warning/30 bg-warning/10 text-warning'}>{thesis.assessment.evidence_coverage}%</Badge></div>
                     <p className="text-xs leading-relaxed text-muted-foreground">{thesis.draft.core_view}</p>
                     {!!thesis.assessment.issues.length && <div className="mt-3 border-t border-border pt-3">{thesis.assessment.issues.map(issue => <div key={issue} className="mt-1 text-xs text-warning">· {issue}</div>)}</div>}
+                    {!!thesis.assessment.ai_suggestions.length && <div className="mt-3 border-t border-border pt-3">{thesis.assessment.ai_suggestions.map(item => <div key={item} className="mt-1 text-xs text-muted-foreground">建议：{item}</div>)}</div>}
                   </div>
                 ))}
               </div>
@@ -334,6 +354,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
               </div>
             )}
             {!activeDefense && defenses.filter(item => item.status === 'completed').map(session => <DefenseHistory key={session.session_id} session={session} />)}
+            {!!tasks.length && <div className="mt-5 rounded-lg border border-border bg-card p-4"><div className="mb-3 text-sm font-semibold text-foreground">答辩回流任务</div>{tasks.map(task => <div key={task.task_id} className="mt-2 rounded-md border border-border bg-secondary/20 p-3"><div className="text-xs font-medium text-foreground">{task.title}</div><div className="mt-1 text-xs text-muted-foreground">{task.detail}</div></div>)}</div>}
           </TabsContent>
         </Tabs>
       )}

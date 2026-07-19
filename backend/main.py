@@ -7,10 +7,10 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFi
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import authenticate_user, create_access_token, create_user, get_current_user, get_optional_current_user, init_auth_db, to_auth_user
-from .file_parsers import FileParseError, parse_uploaded_file
-from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, CapabilityProfile, DefenseAnswerRequest, DefenseSession, EvidenceGraph, EvidenceNodeReview, HealthResponse, LoginRequest, RegisterRequest, ResearchMap, ResearchProjectCreate, ResearchProjectDetail, ResearchProjectSummary, ResearchProjectUpdate, ResearchRunDetail, ResearchRunSummary, ReviewRequest, ThesisDraft, ThesisVersion
+from .file_parsers import FileParseError, cross_check_multimodal_materials, parse_uploaded_file
+from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, CapabilityProfile, DefenseAnswerRequest, DefenseSession, EvidenceGraph, EvidenceNodeReview, HealthResponse, LoginRequest, ProjectMaterial, RegisterRequest, ResearchMap, ResearchProjectCreate, ResearchProjectDetail, ResearchProjectSummary, ResearchProjectUpdate, ResearchRunDetail, ResearchRunSummary, ResearchTask, ReviewRequest, ThesisDraft, ThesisVersion
 from .research_map import generate_research_map
-from .storage import create_research_project, get_defense_session, get_project_evidence_graph, get_research_project, get_user_run, init_research_runs_db, list_capability_profiles, list_defense_sessions, list_research_projects, list_thesis_versions, list_user_runs, project_belongs_to_user, review_project_evidence_node, save_capability_profile, save_defense_session, save_thesis_version, save_user_run, update_research_project
+from .storage import create_research_project, get_defense_session, get_project_evidence_graph, get_research_project, get_user_run, init_research_runs_db, list_capability_profiles, list_defense_sessions, list_project_materials, list_research_projects, list_research_tasks, list_thesis_versions, list_user_runs, project_belongs_to_user, review_project_evidence_node, save_capability_profile, save_defense_session, save_thesis_version, save_user_run, sync_defense_tasks, update_research_project
 from .capability_profile import build_capability_profile
 from .defense import answer_defense, start_defense
 from .thesis_builder import assess_thesis
@@ -133,6 +133,8 @@ async def analyze_files(
     if not request.materials:
         raise HTTPException(status_code=400, detail="请至少提供一份文本资料或上传文件")
 
+    cross_check_multimodal_materials(request.materials)
+
     _validate_project_access(current_user, request.project_id)
     state = run_analysis_workflow(request)
     save_user_run(user_id=current_user.user_id if current_user else None, run_type="analysis", state=state, project_id=request.project_id)
@@ -190,6 +192,13 @@ def project_detail(
     return detail
 
 
+@app.get("/api/projects/{project_id}/materials", response_model=list[ProjectMaterial])
+def project_materials(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> list[ProjectMaterial]:
+    if not project_belongs_to_user(current_user.user_id, project_id):
+        raise HTTPException(status_code=404, detail="未找到该研究项目")
+    return list_project_materials(current_user.user_id, project_id)
+
+
 @app.patch("/api/projects/{project_id}", response_model=ResearchProjectDetail)
 def update_project(
     project_id: str,
@@ -239,7 +248,8 @@ def project_research_map(project_id: str, current_user: AuthUser = Depends(get_c
     if not detail:
         raise HTTPException(status_code=404, detail="未找到该研究项目")
     graph = get_project_evidence_graph(current_user.user_id, project_id) or EvidenceGraph()
-    return generate_research_map(project_id, detail.project.company_profile.industry, graph)
+    project = detail.project
+    return generate_research_map(project_id, project.company_profile.industry, graph, company_name=project.company_profile.company_name, research_objective=project.research_objective, initial_view=project.initial_view, key_question=project.key_question)
 
 
 @app.post("/api/projects/{project_id}/thesis", response_model=ThesisVersion)
@@ -278,13 +288,21 @@ def submit_defense_answer(session_id: str, request: DefenseAnswerRequest, curren
     graph = get_project_evidence_graph(current_user.user_id, session.project_id) or EvidenceGraph()
     try: session = answer_defense(session, thesis, graph, request.answer, request.evidence_ids)
     except ValueError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return save_defense_session(current_user.user_id, session)
+    saved = save_defense_session(current_user.user_id, session)
+    sync_defense_tasks(current_user.user_id, saved)
+    return saved
 
 
 @app.get("/api/projects/{project_id}/defense", response_model=list[DefenseSession])
 def project_defenses(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> list[DefenseSession]:
     if not project_belongs_to_user(current_user.user_id, project_id): raise HTTPException(status_code=404, detail="未找到该研究项目")
     return list_defense_sessions(current_user.user_id, project_id)
+
+
+@app.get("/api/projects/{project_id}/tasks", response_model=list[ResearchTask])
+def project_tasks(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> list[ResearchTask]:
+    if not project_belongs_to_user(current_user.user_id, project_id): raise HTTPException(status_code=404, detail="未找到该研究项目")
+    return list_research_tasks(current_user.user_id, project_id)
 
 
 @app.post("/api/capability-profile", response_model=CapabilityProfile)

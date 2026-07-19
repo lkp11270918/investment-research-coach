@@ -20,6 +20,8 @@ from .llm_agents import (
 from .models import AnalyzeRequest, ReviewRequest, WorkflowState, WorkflowStopAfter
 from .evidence_graph import build_evidence_graph
 from .storage import save_run
+from .llm_client import OpenAIClient
+from .model_pipeline import pipeline_records
 
 
 def _should_stop(request: AnalyzeRequest, step: WorkflowStopAfter) -> bool:
@@ -95,6 +97,7 @@ def run_analysis_workflow(request: AnalyzeRequest) -> WorkflowState:
         if state.post_memo_gate.status == "fail" and state.workflow_status == "completed":
             state.workflow_status = "needs_revision"
     state.evidence_graph = build_evidence_graph(state)
+    state.processing_records = pipeline_records(state.raw_materials, state.evidence_items, OpenAIClient().available)
 
     return _save_and_return(state)
 
@@ -127,6 +130,7 @@ def run_review_workflow(request: ReviewRequest) -> WorkflowState:
     review = run_research_coach_review_llm(request.memo_text, state)
     state.agent_outputs["research_coach_review"] = review
     state.evidence_graph = build_evidence_graph(state)
+    state.processing_records = pipeline_records(state.raw_materials, state.evidence_items, OpenAIClient().available)
 
     save_run(state, state.run_id)
     return state

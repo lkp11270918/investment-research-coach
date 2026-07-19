@@ -10,7 +10,7 @@ from pathlib import Path
 from pypdf import PdfReader
 
 from .models import ContentBlock, MaterialModality, RawMaterial, SourceType
-from .multimodal_parser import MultimodalParseError, parse_audio, parse_image
+from .multimodal_parser import MultimodalParseError, parse_audio, parse_image, parse_scanned_pdf
 
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".mp3", ".m4a", ".wav", ".mp4"}
@@ -58,6 +58,11 @@ def parse_uploaded_file(
         content = _parse_xlsx(data)
     elif ext == ".pdf":
         content = _parse_pdf(data)
+        if not content.strip():
+            try:
+                content, blocks, warnings = parse_scanned_pdf(filename, data)
+            except MultimodalParseError as exc:
+                raise FileParseError(str(exc)) from exc
     elif ext in {".png", ".jpg", ".jpeg", ".webp"}:
         modality = MaterialModality.IMAGE
         try:
@@ -106,7 +111,7 @@ def _blocks_from_content(content: str, ext: str) -> list[ContentBlock]:
             current_page = int(page_match.group(1))
             paragraph = 0
             continue
-        if ext == ".xlsx" and stripped.startswith("## "):
+        if ext in {".xlsx", ".csv"} and stripped.startswith("## "):
             current_sheet = stripped[3:]
             row = 0
             continue
@@ -161,10 +166,10 @@ def _parse_xlsx(data: bytes) -> str:
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             shared_strings = _xlsx_shared_strings(zf)
-            sheet_names = [name for name in zf.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")]
+            sheet_names = _xlsx_sheet_names(zf)
             outputs: list[str] = []
-            for sheet_name in sorted(sheet_names):
-                outputs.append(f"## {Path(sheet_name).stem}")
+            for title, sheet_name in sheet_names:
+                outputs.append(f"## {title}")
                 outputs.extend(_xlsx_sheet_rows(zf.read(sheet_name), shared_strings))
             return "\n".join(outputs)
     except Exception as exc:
@@ -183,6 +188,28 @@ def _xlsx_shared_strings(zf: zipfile.ZipFile) -> list[str]:
         parts = [t.text or "" for t in si.findall(".//x:t", ns)]
         strings.append("".join(parts))
     return strings
+
+
+def _xlsx_sheet_names(zf: zipfile.ZipFile) -> list[tuple[str, str]]:
+    fallback = [(Path(name).stem, name) for name in sorted(zf.namelist()) if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")]
+    try:
+        workbook = ET.fromstring(zf.read("xl/workbook.xml"))
+        rels = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+    except (KeyError, ET.ParseError):
+        return fallback
+    main_ns = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    rel_ns = {"r": "http://schemas.openxmlformats.org/package/2006/relationships"}
+    targets = {node.attrib.get("Id"): node.attrib.get("Target", "") for node in rels.findall("r:Relationship", rel_ns)}
+    result: list[tuple[str, str]] = []
+    relationship_key = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+    for sheet in workbook.findall("x:sheets/x:sheet", main_ns):
+        target = targets.get(sheet.attrib.get(relationship_key), "")
+        path = target.lstrip("/")
+        if not path.startswith("xl/"):
+            path = f"xl/{path}"
+        if path in zf.namelist():
+            result.append((sheet.attrib.get("name", Path(path).stem), path))
+    return result or fallback
 
 
 def _xlsx_sheet_rows(xml: bytes, shared_strings: list[str]) -> list[str]:
@@ -245,3 +272,25 @@ def _normalize_text(text: str) -> str:
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+def cross_check_multimodal_materials(materials: list[RawMaterial]) -> None:
+    numeric_sources = set()
+    for material in materials:
+        if material.modality in {MaterialModality.TEXT, MaterialModality.TABLE}:
+            numeric_sources.update(_numeric_tokens(material.content))
+    for material in materials:
+        if material.modality != MaterialModality.IMAGE:
+            continue
+        visible_blocks = [block for block in material.blocks if block.extraction_method == "vision_model"]
+        visible_numbers = set().union(*(_numeric_tokens(block.content) for block in visible_blocks)) if visible_blocks else set()
+        if not visible_numbers:
+            material.parse_warnings.append("图片未识别出可交叉核验的数字。")
+        elif visible_numbers & numeric_sources:
+            material.parse_warnings.append(f"图片中 {len(visible_numbers & numeric_sources)} 个数字可在其他材料中找到，仍需核对指标与期间。")
+        else:
+            material.parse_warnings.append("图片数字未在其他文本或表格材料中找到，暂标记为待验证。")
+
+
+def _numeric_tokens(text: str) -> set[str]:
+    return {token.replace(",", "") for token in re.findall(r"[-+]?\d[\d,]*(?:\.\d+)?%?", text)}

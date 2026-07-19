@@ -15,8 +15,15 @@ class CapabilityProfileTest(unittest.TestCase):
         counter = next(item for item in profile.dimensions if item.dimension == "counter_evidence")
         self.assertIn("核心观点缺少最强反证", counter.repeated_errors)
         self.assertLess(counter.score, 60)
+        self.assertEqual(counter.trend, "improving")
+        self.assertGreaterEqual(counter.sample_count, 2)
         self.assertIn("counter_evidence", profile.priorities)
         self.assertEqual(profile.sample_count, 3)
+
+    def test_missing_dimension_is_not_a_fake_fifty(self) -> None:
+        profile = build_capability_profile("U1", [], [], [])
+        self.assertTrue(all(item.score is None for item in profile.dimensions))
+        self.assertTrue(all(item.trend == "insufficient_data" for item in profile.dimensions))
 
 
 if __name__ == "__main__": unittest.main()

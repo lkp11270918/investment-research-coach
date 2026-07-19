@@ -13,6 +13,7 @@ from .agents import run_research_memo_generator as run_stub_research_memo_genera
 from .agents import run_value_trap_contradiction as run_stub_value_trap_contradiction
 from .financial_parser import expected_financial_metric_names, extract_structured_financial_evidence
 from .llm_client import LLMError, OpenAIClient
+from .model_pipeline import classify_material, classify_statement
 from .value_investing_doctrine import doctrine_text
 from .models import (
     AgentFinding,
@@ -540,14 +541,17 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
     by_index = {int(doc.get("input_index", -1)): doc for doc in raw_docs if isinstance(doc, dict)}
     for index, raw in enumerate(state.raw_materials):
         llm_doc = by_index.get(index, {})
+        local_source_type, _ = classify_material(raw)
         documents.append(
             SourceDocument(
                 title=raw.title,
-                source_type=_source_type(llm_doc.get("source_type"), raw.source_type),
+                source_type=_source_type(llm_doc.get("source_type"), local_source_type),
                 file_name=raw.file_name,
                 url=raw.url,
                 usage_rights_confirmed=raw.usage_rights_confirmed,
                 period_covered=llm_doc.get("period_covered") or raw.period_covered,
+                publisher=raw.publisher,
+                published_at=raw.published_at,
                 reliability_note=llm_doc.get("reliability_note") or "用户提供资料，需以后续证据抽取和交叉验证为准。",
                 content=raw.content,
                 modality=raw.modality,
@@ -611,7 +615,9 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
         if source_id not in source_by_id:
             continue
         source = source_by_id[source_id]
-        category = _category(raw.get("category"))
+        statement = str(raw.get("statement") or "")
+        local_category, _ = classify_statement(statement)
+        category = _category(raw.get("category")) if raw.get("category") else local_category
         refs = [
             SourceRef(
                 source_id=source_id,
@@ -624,7 +630,7 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
             status = VerificationStatus.TO_BE_VERIFIED
         item = EvidenceItem(
             category=category,
-            statement=str(raw.get("statement") or ""),
+            statement=statement,
             source_refs=refs,
             period=raw.get("period"),
             metric_name=raw.get("metric_name"),

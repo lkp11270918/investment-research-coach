@@ -23,9 +23,10 @@ class DefenseTest(unittest.TestCase):
             if session.status == "completed": break
             session = answer_defense(session, thesis, graph, "根据证据E1，当前判断依赖需求稳定这一假设。如果经营现金流持续下降或自由现金流无法覆盖资本开支，该观点将被推翻，目前仍存在不确定性并需要后续验证。", ["E1"], NoLLM())
         self.assertEqual(session.status, "completed")
-        self.assertEqual({turn.role.value for turn in session.turns}, {"portfolio_manager", "industry_researcher", "financial_researcher", "risk_manager"})
+        self.assertEqual({turn.role.value for turn in session.turns}, {"portfolio_manager", "investment_director", "industry_researcher", "risk_manager"})
         self.assertIsNotNone(session.overall_score)
         self.assertTrue(session.improvement_tasks)
+        self.assertTrue(all(turn.score_breakdown for turn in session.turns if turn.answer))
 
 
 if __name__ == "__main__": unittest.main()

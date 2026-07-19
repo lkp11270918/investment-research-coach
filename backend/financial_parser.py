@@ -46,6 +46,7 @@ def extract_structured_financial_evidence(documents: Iterable[SourceDocument]) -
                 if any(row_periods):
                     header_periods = row_periods
                 continue
+            coordinate = _source_coordinate(doc, row, row_index)
             for period, raw_value, unit in _extract_values_from_row(row, metric, header_periods):
                 evidence.append(
                     EvidenceItem(
@@ -55,7 +56,10 @@ def extract_structured_financial_evidence(documents: Iterable[SourceDocument]) -
                             SourceRef(
                                 source_id=doc.source_id,
                                 excerpt=row[:500],
-                                row_id=str(row_index),
+                                page=coordinate["page"],
+                                paragraph_id=coordinate["paragraph_id"],
+                                sheet=coordinate["sheet"],
+                                row_id=coordinate["row_id"],
                                 url=doc.url,
                             )
                         ],
@@ -88,8 +92,8 @@ def _iter_table_rows(content: str) -> Iterable[str]:
         line = raw_line.strip()
         if not line or line.startswith("## "):
             continue
-        if "|" in line or "," in line or "\t" in line:
-            yield re.sub(r"\s+", " ", line)
+        if "|" in line or "\t" in line or ":" in line or "：" in line:
+            yield re.sub(r"[ ]+", " ", line)
 
 
 def _split_cells(row: str) -> list[str]:
@@ -97,7 +101,11 @@ def _split_cells(row: str) -> list[str]:
         return [cell.strip() for cell in row.split("|")]
     if "\t" in row:
         return [cell.strip() for cell in row.split("\t")]
-    return [cell.strip() for cell in row.split(",")]
+    if "：" in row:
+        return [cell.strip() for cell in row.split("：", 1)]
+    if ":" in row:
+        return [cell.strip() for cell in row.split(":", 1)]
+    return [row.strip()]
 
 
 def _match_metric(row: str) -> FinancialMetricSpec | None:
@@ -113,7 +121,7 @@ def _extract_values_from_row(
     metric: FinancialMetricSpec,
     header_periods: list[str | None] | None = None,
 ) -> list[tuple[str | None, str, str | None]]:
-    cells = [cell for cell in _split_cells(row) if cell]
+    cells = _split_cells(row)
     if len(cells) < 2:
         return []
 
@@ -123,7 +131,7 @@ def _extract_values_from_row(
     for index, cell in enumerate(cells):
         if any(alias.lower() in cell.lower() for alias in metric.aliases):
             continue
-        number = _first_number(cell)
+        number = _first_metric_number(cell, metric)
         if number is None:
             continue
         period = _period_at(header_periods or [], index) or _nearest_period(periods, index) or fallback_period
@@ -161,6 +169,35 @@ def _normalize_period(text: str) -> str | None:
 def _first_number(text: str) -> str | None:
     match = _NUMBER_RE.search(text.replace("，", ","))
     return match.group(0) if match else None
+
+
+def _first_metric_number(text: str, metric: FinancialMetricSpec) -> str | None:
+    candidates = list(_NUMBER_RE.finditer(text.replace("，", ",")))
+    for match in candidates:
+        raw = match.group(0)
+        suffix = text[match.end():match.end() + 8]
+        prefix = text[max(0, match.start() - 4):match.start()]
+        if re.fullmatch(r"20\d{2}", raw.replace(",", "")) and ("年" in suffix or metric.default_unit != "元"):
+            continue
+        if (raw.endswith("%") or "%" in suffix[:2]) and metric.default_unit != "%":
+            continue
+        if any(word in prefix.lower() for word in ("同比", "增长", "下降", "yoy")):
+            continue
+        return raw
+    return None
+
+
+def _source_coordinate(doc: SourceDocument, row: str, row_index: int) -> dict[str, str | None]:
+    normalized = re.sub(r"\s+", "", row)
+    for block in doc.blocks:
+        if normalized and normalized in re.sub(r"\s+", "", block.content):
+            return {
+                "page": str(block.page) if block.page is not None else None,
+                "paragraph_id": str(block.paragraph) if block.paragraph is not None else None,
+                "sheet": block.sheet,
+                "row_id": str(block.row) if block.row is not None else str(row_index),
+            }
+    return {"page": None, "paragraph_id": None, "sheet": None, "row_id": str(row_index)}
 
 
 def _infer_unit(cell: str, row: str, default_unit: str | None) -> str | None:

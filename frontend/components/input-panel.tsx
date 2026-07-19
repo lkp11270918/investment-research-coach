@@ -15,10 +15,17 @@ interface MaterialItem {
 }
 
 interface InputPanelProps {
+  projectId?: string | null
+  initialCompany?: { stockCode: string; companyName: string; industry: string } | null
   onStartAnalysis: (data: {
     stockCode: string
     companyName: string
     industry: string
+    projectId?: string | null
+    researchObjective: string
+    investmentHorizon: string
+    initialView: string
+    keyQuestion: string
     materials: MaterialItem[]
   }) => void
 }
@@ -73,10 +80,14 @@ ROE：36.5%（不含高杠杆）
 分歧点：直销占比提升能否持续 vs 宏观消费不确定性影响需求。`,
 }
 
-export function InputPanel({ onStartAnalysis }: InputPanelProps) {
-  const [stockCode, setStockCode] = useState('')
-  const [companyName, setCompanyName] = useState('')
-  const [industry, setIndustry] = useState('')
+export function InputPanel({ onStartAnalysis, projectId, initialCompany }: InputPanelProps) {
+  const [stockCode, setStockCode] = useState(initialCompany?.stockCode || '')
+  const [companyName, setCompanyName] = useState(initialCompany?.companyName || '')
+  const [industry, setIndustry] = useState(initialCompany?.industry || '')
+  const [researchObjective, setResearchObjective] = useState('')
+  const [investmentHorizon, setInvestmentHorizon] = useState('3-5年')
+  const [initialView, setInitialView] = useState('')
+  const [keyQuestion, setKeyQuestion] = useState('')
   const [activeType, setActiveType] = useState<string | null>('financial')
   const [materialContents, setMaterialContents] = useState<Record<string, string>>({})
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, File[]>>({})
@@ -139,7 +150,7 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
       file: uploadedFiles[m.id]?.[0],
       files: uploadedFiles[m.id] || [],
     }))
-    onStartAnalysis({ stockCode, companyName, industry, materials })
+    onStartAnalysis({ stockCode, companyName, industry, projectId, researchObjective, investmentHorizon, initialView, keyQuestion, materials })
   }
 
   return (
@@ -149,7 +160,7 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
         <div className="col-span-4 space-y-5">
           {/* Title */}
           <div>
-            <h1 className="text-xl font-semibold text-foreground">新建研究任务</h1>
+            <h1 className="text-xl font-semibold text-foreground">{projectId ? '补充项目资料' : '新建研究任务'}</h1>
             <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
               输入公司信息，上传或粘贴研究资料，AI 将按照价值投资框架完成分析。
             </p>
@@ -190,6 +201,12 @@ export function InputPanel({ onStartAnalysis }: InputPanelProps) {
                   className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-muted-foreground mb-1.5 block">研究目的</label><input value={researchObjective} onChange={e => setResearchObjective(e.target.value)} placeholder="例：验证现金流质量" className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" /></div>
+                <div><label className="text-xs text-muted-foreground mb-1.5 block">投资期限</label><input value={investmentHorizon} onChange={e => setInvestmentHorizon(e.target.value)} className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" /></div>
+              </div>
+              <div><label className="text-xs text-muted-foreground mb-1.5 block">初步判断</label><Textarea value={initialView} onChange={e => setInitialView(e.target.value)} placeholder="写下当前判断，后续系统会主动寻找反证" className="min-h-20 bg-input text-sm" /></div>
+              <div><label className="text-xs text-muted-foreground mb-1.5 block">最想验证的问题</label><Textarea value={keyQuestion} onChange={e => setKeyQuestion(e.target.value)} placeholder="例：资本开支是否会侵蚀自由现金流？" className="min-h-20 bg-input text-sm" /></div>
             </div>
 
             {/* Quick select */}

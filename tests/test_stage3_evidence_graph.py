@@ -15,6 +15,22 @@ from backend.storage import create_research_project, get_project_evidence_graph,
 
 
 class EvidenceGraphTest(unittest.TestCase):
+    def test_semantic_support_contradiction_dependency_and_question(self) -> None:
+        from backend.evidence_relations import infer_semantic_edges
+        from backend.models import EvidenceGraphNode, EvidenceRelation
+
+        nodes = [
+            EvidenceGraphNode(node_id="A", node_type="fact", label="海外收入持续增长并改善盈利"),
+            EvidenceGraphNode(node_id="B", node_type="management_opinion", label="海外收入增长支持盈利改善"),
+            EvidenceGraphNode(node_id="C", node_type="risk", label="海外收入下降导致盈利恶化风险"),
+            EvidenceGraphNode(node_id="D", node_type="assumption", label="海外盈利改善依赖汇率稳定"),
+            EvidenceGraphNode(node_id="E", node_type="verification_question", label="海外收入增长是否可持续待验证"),
+        ]
+        relations = {edge.relation for edge in infer_semantic_edges(nodes)}
+        self.assertIn(EvidenceRelation.SUPPORTS, relations)
+        self.assertIn(EvidenceRelation.CONTRADICTS, relations)
+        self.assertIn(EvidenceRelation.DEPENDS_ON, relations)
+        self.assertIn(EvidenceRelation.QUESTIONED_BY, relations)
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.previous = os.environ.get("DATABASE_URL")

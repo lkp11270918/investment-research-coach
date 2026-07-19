@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from backend.file_parsers import parse_uploaded_file
-from backend.models import ContentBlock, MaterialModality
+from backend.file_parsers import cross_check_multimodal_materials, parse_uploaded_file
+from backend.models import ContentBlock, MaterialModality, RawMaterial
 
 
 class MultimodalNormalizationTest(unittest.TestCase):
@@ -41,6 +41,12 @@ class MultimodalNormalizationTest(unittest.TestCase):
         self.assertEqual(material.modality, MaterialModality.AUDIO)
         self.assertEqual(material.blocks[0].speaker, "unknown")
         self.assertTrue(material.blocks[0].requires_confirmation)
+
+    def test_image_numbers_are_cross_checked_against_tables(self) -> None:
+        table = RawMaterial(title="财务表", content="营业收入 100 亿元", modality=MaterialModality.TABLE)
+        image = RawMaterial(title="图表", content="营收100", modality=MaterialModality.IMAGE, blocks=[ContentBlock(modality=MaterialModality.IMAGE, content="营业收入 100 亿元", extraction_method="vision_model")])
+        cross_check_multimodal_materials([table, image])
+        self.assertTrue(any("其他材料" in warning for warning in image.parse_warnings))
 
 
 if __name__ == "__main__":

@@ -52,7 +52,7 @@ def parse_audio(filename: str, data: bytes) -> tuple[str, list[ContentBlock], li
     if not settings.openai_api_key or not settings.use_llm_agents:
         raise MultimodalParseError("音频解析需要配置语音识别模型")
     boundary = f"----research-{uuid4().hex}"
-    fields = [("model", "gpt-4o-mini-transcribe"), ("response_format", "json")]
+    fields = [("model", "gpt-4o-transcribe-diarize"), ("response_format", "diarized_json"), ("chunking_strategy", "auto")]
     parts: list[bytes] = []
     for name, value in fields:
         parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode())
@@ -75,7 +75,57 @@ def parse_audio(filename: str, data: bytes) -> tuple[str, list[ContentBlock], li
     text = str(payload.get("text", "")).strip()
     if not text:
         raise MultimodalParseError("音频未转写出有效文本")
-    return text, [ContentBlock(modality=MaterialModality.AUDIO, content=text, speaker="unknown", extraction_method="speech_to_text", requires_confirmation=True)], ["当前转写未确认说话人，管理层归因必须由用户确认。"]
+    blocks: list[ContentBlock] = []
+    for segment in payload.get("segments", []):
+        if not isinstance(segment, dict) or not str(segment.get("text", "")).strip():
+            continue
+        blocks.append(ContentBlock(modality=MaterialModality.AUDIO, content=str(segment["text"]).strip(), speaker=str(segment.get("speaker") or "unknown"), start_seconds=_float_or_none(segment.get("start")), end_seconds=_float_or_none(segment.get("end")), extraction_method="speech_to_text_diarized", requires_confirmation=not bool(segment.get("speaker"))))
+    if not blocks:
+        blocks = [ContentBlock(modality=MaterialModality.AUDIO, content=text, speaker="unknown", extraction_method="speech_to_text", requires_confirmation=True)]
+    analysis = _analyze_management_transcript(text, settings)
+    if analysis:
+        blocks.append(ContentBlock(modality=MaterialModality.AUDIO, content=json.dumps(analysis, ensure_ascii=False), extraction_method="management_signal_analysis", requires_confirmation=True))
+    warnings = [] if all(block.speaker != "unknown" for block in blocks if block.extraction_method.startswith("speech_to_text")) else ["部分说话人尚未确认，管理层归因需要用户复核。"]
+    if analysis:
+        warnings.append("管理层语气、回避和承诺属于模型判断，已标记为待确认。")
+    return text, blocks, warnings
+
+
+def parse_scanned_pdf(filename: str, data: bytes) -> tuple[str, list[ContentBlock], list[str]]:
+    settings = get_settings()
+    if not settings.openai_api_key or not settings.use_llm_agents:
+        raise MultimodalParseError("扫描PDF需要配置可用的文档视觉模型")
+    body = {"model": settings.openai_model, "input": [{"role": "user", "content": [{"type": "input_text", "text": "逐页识别这份扫描投研PDF。返回JSON：{\"pages\":[{\"page\":1,\"text\":\"...\",\"tables\":[\"...\"]}]}。保留数字、单位、年份和表格行，不得补写不可见内容。"}, {"type": "input_file", "filename": filename, "file_data": f"data:application/pdf;base64,{base64.b64encode(data).decode('ascii')}"}]}], "temperature": 0}
+    payload = _request_json(f"{settings.openai_base_url.rstrip('/')}/responses", body, settings.openai_api_key, max(settings.llm_timeout_seconds, 120))
+    parsed = _extract_json(_response_text(payload))
+    blocks: list[ContentBlock] = []
+    rendered: list[str] = []
+    for item in parsed.get("pages", []):
+        if not isinstance(item, dict): continue
+        page = int(item.get("page") or len(rendered) + 1)
+        page_text = str(item.get("text") or "").strip()
+        tables = [str(value) for value in item.get("tables", [])]
+        content = "\n".join([page_text, *tables]).strip()
+        if content:
+            rendered.append(f"## Page {page}\n{content}")
+            blocks.append(ContentBlock(modality=MaterialModality.TEXT, content=content, page=page, extraction_method="document_vision_ocr", requires_confirmation=True))
+    text = "\n\n".join(rendered)
+    if not text: raise MultimodalParseError("扫描PDF未识别出有效内容")
+    return text, blocks, ["扫描PDF由视觉模型识别，关键数字使用前需要与原页复核。"]
+
+
+def _analyze_management_transcript(text: str, settings) -> dict:
+    body = {"model": settings.openai_model, "input": [{"role": "user", "content": [{"type": "input_text", "text": "分析以下电话会转写，仅返回JSON：{\"management_views\":[],\"commitments\":[],\"evasive_answers\":[],\"tone_changes\":[]}。每项保留原话片段并区分事实与推断。\n" + text[:24000]}]}], "temperature": 0}
+    try:
+        payload = _request_json(f"{settings.openai_base_url.rstrip('/')}/responses", body, settings.openai_api_key, settings.llm_timeout_seconds)
+        return _extract_json(_response_text(payload))
+    except MultimodalParseError:
+        return {}
+
+
+def _float_or_none(value) -> float | None:
+    try: return float(value)
+    except (TypeError, ValueError): return None
 
 
 def _request_json(url: str, body: dict, api_key: str, timeout: int) -> dict:

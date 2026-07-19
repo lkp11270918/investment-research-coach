@@ -30,6 +30,24 @@ class AgentStatus(str, Enum):
     FAIL = "fail"
 
 
+class ModelLayer(str, Enum):
+    RULES = "rules"
+    LIGHTWEIGHT_CLASSIFIER = "lightweight_classifier"
+    SPECIALIZED_MODEL = "specialized_model"
+    LARGE_MODEL = "large_model"
+    EVIDENCE_GATE = "evidence_gate"
+
+
+class ModelExecutionRecord(BaseModel):
+    layer: ModelLayer
+    component: str
+    purpose: str
+    deterministic: bool = False
+    input_count: int = 0
+    output_count: int = 0
+    status: str = "completed"
+
+
 class EvidenceCategory(str, Enum):
     FACT = "fact"
     FINANCIAL_FACT = "financial_fact"
@@ -57,6 +75,7 @@ class EvidenceRelation(str, Enum):
     DEPENDS_ON = "depends_on"
     DUPLICATES = "duplicates"
     MENTIONS = "mentions"
+    QUESTIONED_BY = "questioned_by"
 
 
 class EvidenceGraphNode(BaseModel):
@@ -106,6 +125,8 @@ class ResearchQuestion(BaseModel):
     status: ResearchQuestionStatus = ResearchQuestionStatus.UNANSWERED
     evidence_ids: list[str] = Field(default_factory=list)
     missing_materials: list[str] = Field(default_factory=list)
+    rationale: str | None = None
+    required_evidence_types: list[str] = Field(default_factory=list)
 
 
 class ResearchMap(BaseModel):
@@ -123,6 +144,13 @@ class ThesisVariable(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+class ThesisScenario(BaseModel):
+    name: str
+    assumptions: list[str] = Field(default_factory=list)
+    outcome: str
+    trigger_conditions: list[str] = Field(default_factory=list)
+
+
 class ThesisDraft(BaseModel):
     core_view: str
     core_variables: list[ThesisVariable] = Field(default_factory=list, max_length=3)
@@ -131,6 +159,7 @@ class ThesisDraft(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     falsification_conditions: list[str] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
+    scenarios: list[ThesisScenario] = Field(default_factory=list)
     user_internal_label: str | None = None
 
 
@@ -140,6 +169,9 @@ class ThesisAssessment(BaseModel):
     evidence_coverage: float = 0
     sell_side_repetition_risk: bool = False
     confidence: Confidence = Confidence.LOW
+    ai_suggestions: list[str] = Field(default_factory=list)
+    relevant_support_ids: list[str] = Field(default_factory=list)
+    relevant_counter_ids: list[str] = Field(default_factory=list)
 
 
 class ThesisVersion(BaseModel):
@@ -153,6 +185,7 @@ class ThesisVersion(BaseModel):
 
 class DefenseRole(str, Enum):
     PORTFOLIO_MANAGER = "portfolio_manager"
+    INVESTMENT_DIRECTOR = "investment_director"
     INDUSTRY_RESEARCHER = "industry_researcher"
     FINANCIAL_RESEARCHER = "financial_researcher"
     RISK_MANAGER = "risk_manager"
@@ -169,6 +202,7 @@ class DefenseTurn(BaseModel):
     score: float | None = None
     feedback: str | None = None
     passed: bool | None = None
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
 
 
 class DefenseSession(BaseModel):
@@ -183,6 +217,19 @@ class DefenseSession(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ResearchTask(BaseModel):
+    task_id: str = Field(default_factory=lambda: f"TASK-{uuid4().hex[:10]}")
+    project_id: str
+    title: str
+    detail: str
+    source_type: str
+    source_id: str
+    priority: int = 1
+    status: str = "open"
+    evidence_ids: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class DefenseAnswerRequest(BaseModel):
     answer: str
     evidence_ids: list[str] = Field(default_factory=list)
@@ -190,9 +237,13 @@ class DefenseAnswerRequest(BaseModel):
 
 class CapabilityDimension(BaseModel):
     dimension: str
-    score: float
+    score: float | None = None
     evidence: list[str] = Field(default_factory=list)
     repeated_errors: list[str] = Field(default_factory=list)
+    sample_count: int = 0
+    confidence: Confidence = Confidence.LOW
+    trend: str = "insufficient_data"
+    change: float | None = None
 
 
 class CapabilityProfile(BaseModel):
@@ -307,6 +358,8 @@ class RawMaterial(BaseModel):
     url: str | None = None
     usage_rights_confirmed: bool | None = None
     period_covered: str | None = None
+    publisher: str | None = None
+    published_at: datetime | None = None
     modality: MaterialModality = MaterialModality.TEXT
     blocks: list[ContentBlock] = Field(default_factory=list)
     parse_warnings: list[str] = Field(default_factory=list)
@@ -321,6 +374,8 @@ class SourceDocument(BaseModel):
     provided_by_user: bool = True
     usage_rights_confirmed: bool | None = None
     period_covered: str | None = None
+    publisher: str | None = None
+    published_at: datetime | None = None
     reliability_note: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     content: str = ""
@@ -334,7 +389,9 @@ class SourceRef(BaseModel):
     excerpt: str | None = None
     page: str | None = None
     paragraph_id: str | None = None
+    sheet: str | None = None
     row_id: str | None = None
+    cell_range: str | None = None
     url: str | None = None
 
 
@@ -428,6 +485,7 @@ class WorkflowState(BaseModel):
     evidence_items: list[EvidenceItem] = Field(default_factory=list)
     evidence_graph: EvidenceGraph = Field(default_factory=EvidenceGraph)
     agent_outputs: dict[str, AgentOutput] = Field(default_factory=dict)
+    processing_records: list[ModelExecutionRecord] = Field(default_factory=list)
     pre_memo_gate: ComplianceGateOutput | None = None
     post_memo_gate: ComplianceGateOutput | None = None
     memo: ResearchMemo | None = None
@@ -492,9 +550,30 @@ class ResearchProjectSummary(BaseModel):
     updated_at: datetime
 
 
+class ProjectMaterial(BaseModel):
+    material_id: str = Field(default_factory=lambda: f"MAT-{uuid4().hex[:10]}")
+    project_id: str
+    run_id: str
+    version: int = 1
+    title: str
+    source_type: SourceType
+    modality: MaterialModality
+    file_name: str | None = None
+    url: str | None = None
+    period_covered: str | None = None
+    publisher: str | None = None
+    published_at: datetime | None = None
+    content_hash: str
+    content: str
+    blocks: list[ContentBlock] = Field(default_factory=list)
+    parse_warnings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ResearchProjectDetail(BaseModel):
     project: ResearchProjectSummary
     timeline: list[ResearchRunSummary] = Field(default_factory=list)
+    materials: list[ProjectMaterial] = Field(default_factory=list)
 
 
 class ResearchRunDetail(BaseModel):

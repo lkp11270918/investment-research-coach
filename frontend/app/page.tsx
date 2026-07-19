@@ -8,10 +8,9 @@ import { InputPanel } from '@/components/input-panel'
 import { AnalysisPanel, type AnalysisData } from '@/components/analysis-panel'
 import { MemoPanel } from '@/components/memo-panel'
 import { ReviewPanel } from '@/components/review-panel'
-import { HistoryPanel } from '@/components/history-panel'
 import { ResearchWorkspacePanel } from '@/components/research-workspace-panel'
 import { CapabilityPanel } from '@/components/capability-panel'
-import type { AnalyzeResult, AuthUser, BackendMemo, ResearchRunDetail } from '@/lib/api'
+import type { AnalyzeResult, AuthUser, BackendMemo } from '@/lib/api'
 import { clearStoredToken, fetchCurrentUser, getStoredToken } from '@/lib/api'
 
 type AppView = 'landing' | 'app'
@@ -22,7 +21,10 @@ export default function Page() {
   const [authModal, setAuthModal] = useState<AuthMode | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
-  const [activeTab, setActiveTab] = useState('input')
+  const [activeTab, setActiveTab] = useState('map')
+  const [showIntake, setShowIntake] = useState(true)
+  const [intakeProjectId, setIntakeProjectId] = useState<string | null>(null)
+  const [intakeCompany, setIntakeCompany] = useState<{ stockCode: string; companyName: string; industry: string } | null>(null)
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalyzeResult | null>(null)
   const [memo, setMemo] = useState<BackendMemo | null>(null)
@@ -35,6 +37,7 @@ export default function Page() {
       .then(user => {
         setCurrentUser(user)
         setIsLoggedIn(true)
+        setShowIntake(false)
       })
       .catch(() => {
         clearStoredToken()
@@ -45,7 +48,7 @@ export default function Page() {
 
   const handleEnterApp = () => {
     setView('app')
-    setActiveTab('input')
+    setActiveTab('map')
   }
 
   const handleLogin = () => setAuthModal('login')
@@ -57,7 +60,8 @@ export default function Page() {
     setIsLoggedIn(true)
     setAuthModal(null)
     setView('app')
-    setActiveTab('input')
+    setActiveTab('map')
+    setShowIntake(false)
   }
 
   const handleLogout = () => {
@@ -66,7 +70,8 @@ export default function Page() {
     setIsLoggedIn(false)
     setAuthModal(null)
     setView('landing')
-    setActiveTab('input')
+    setActiveTab('map')
+    setShowIntake(true)
     setAnalysisData(null)
     setAnalysisResult(null)
     setMemo(null)
@@ -77,31 +82,17 @@ export default function Page() {
     stockCode: string
     companyName: string
     industry: string
+    researchObjective: string
+    investmentHorizon: string
+    initialView: string
+    keyQuestion: string
     materials: AnalysisData['materials']
   }) => {
     setMemo(null)
     setAnalysisResult(null)
-    setCurrentProjectId(null)
     setAnalysisData(data)
-    setActiveTab('analysis')
-  }
-
-  const handleOpenHistoryRun = (detail: ResearchRunDetail) => {
-    const profile = detail.state.company_profile
-    setAnalysisData({
-      stockCode: profile?.ticker || '',
-      companyName: profile?.company_name || detail.summary.company_name,
-      industry: profile?.industry || detail.summary.industry || '',
-      materials: [],
-    })
-    setAnalysisResult({
-      run_id: detail.summary.run_id,
-      status: 'completed',
-      state: detail.state,
-    })
-    setMemo(detail.state.memo || null)
-    setCurrentProjectId(null)
-    setActiveTab(detail.state.memo ? 'memo' : 'analysis')
+    setShowIntake(false)
+    setActiveTab('map')
   }
 
   return (
@@ -129,69 +120,37 @@ export default function Page() {
           />
 
           <main>
-            {activeTab === 'input' && (
-              <InputPanel onStartAnalysis={handleStartAnalysis} />
-            )}
+            {activeTab === 'map' && showIntake && <InputPanel projectId={intakeProjectId} initialCompany={intakeCompany} onStartAnalysis={handleStartAnalysis} />}
 
-            {activeTab === 'analysis' && analysisData ? (
+            {activeTab === 'map' && analysisData && !analysisResult ? (
               <AnalysisPanel
                 data={analysisData}
                 onComplete={(result) => {
                   setAnalysisResult(result)
                   setMemo(result.state.memo || null)
                   setCurrentProjectId(result.project_id || null)
-                  setActiveTab('memo')
+                  setActiveTab('map')
                 }}
               />
-            ) : activeTab === 'analysis' && !analysisData ? (
-              <div className="flex items-center justify-center h-[60vh]">
-                <div className="text-center">
-                  <div className="text-sm mb-3" style={{ color: 'oklch(0.55 0.01 240)' }}>
-                    请先在「资料输入」页填写公司信息并开始分析
-                  </div>
-                  <button
-                    onClick={() => setActiveTab('input')}
-                    className="text-xs transition-opacity hover:opacity-75"
-                    style={{ color: 'oklch(0.65 0.14 195)' }}
-                  >
-                    前往资料输入
-                  </button>
-                </div>
-              </div>
             ) : null}
 
+            {activeTab === 'map' && !showIntake && (!analysisData || analysisResult) && <ResearchWorkspacePanel isLoggedIn={isLoggedIn} projectId={currentProjectId} companyName={analysisData?.companyName} onLogin={handleLogin} section="map" onNewResearch={() => { setShowIntake(true); setIntakeProjectId(null); setIntakeCompany(null); setAnalysisData(null); setAnalysisResult(null); setCurrentProjectId(null) }} onAddMaterials={(projectId, company) => { setIntakeProjectId(projectId); setIntakeCompany(company); setCurrentProjectId(projectId); setAnalysisData(null); setAnalysisResult(null); setShowIntake(true) }} onProjectChange={setCurrentProjectId} />}
+
+            {activeTab === 'evidence' && <ResearchWorkspacePanel isLoggedIn={isLoggedIn} projectId={currentProjectId} companyName={analysisData?.companyName} onLogin={handleLogin} section="evidence" onProjectChange={setCurrentProjectId} />}
+
+            {activeTab === 'thesis' && <ResearchWorkspacePanel isLoggedIn={isLoggedIn} projectId={currentProjectId} companyName={analysisData?.companyName} onLogin={handleLogin} section="thesis" onProjectChange={setCurrentProjectId} />}
+
             {activeTab === 'memo' && (
-              <MemoPanel
+              <><MemoPanel
                 companyName={analysisData?.companyName}
                 stockCode={analysisData?.stockCode}
                 industry={analysisData?.industry}
                 memo={memo}
                 evidenceItems={analysisResult?.state.evidence_items || []}
-              />
+              /><ReviewPanel /></>
             )}
 
-            {activeTab === 'review' && <ReviewPanel />}
-
-            {activeTab === 'workspace' && (
-              <ResearchWorkspacePanel
-                isLoggedIn={isLoggedIn}
-                projectId={currentProjectId}
-                companyName={analysisData?.companyName}
-                onLogin={handleLogin}
-              />
-            )}
-
-            {activeTab === 'history' && (
-              <HistoryPanel
-                isLoggedIn={isLoggedIn}
-                onLogin={handleLogin}
-                onOpenRun={handleOpenHistoryRun}
-              />
-            )}
-
-            {activeTab === 'capability' && (
-              <CapabilityPanel isLoggedIn={isLoggedIn} onLogin={handleLogin} />
-            )}
+            {activeTab === 'defense' && <><ResearchWorkspacePanel isLoggedIn={isLoggedIn} projectId={currentProjectId} companyName={analysisData?.companyName} onLogin={handleLogin} section="defense" onProjectChange={setCurrentProjectId} /><CapabilityPanel isLoggedIn={isLoggedIn} onLogin={handleLogin} /></>}
           </main>
         </div>
       )}

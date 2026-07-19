@@ -12,6 +12,7 @@ from .models import (
     VerificationStatus,
     WorkflowState,
 )
+from .evidence_relations import infer_semantic_edges
 
 
 def build_evidence_graph(state: WorkflowState) -> EvidenceGraph:
@@ -27,7 +28,12 @@ def build_evidence_graph(state: WorkflowState) -> EvidenceGraph:
     metric_groups: dict[tuple[str, str], list] = defaultdict(list)
     for item in state.evidence_items:
         node_id = f"EVIDENCE:{item.evidence_id}"
-        nodes.append(EvidenceGraphNode(node_id=node_id, node_type=item.category.value, label=item.statement, evidence_id=item.evidence_id, confidence=item.confidence, verification_status=item.verification_status, metadata={"period": item.period, "metric_name": item.metric_name, "metric_value": item.metric_value, "unit": item.unit, "notes": item.notes}))
+        nodes.append(EvidenceGraphNode(node_id=node_id, node_type=item.category.value, label=item.statement, evidence_id=item.evidence_id, confidence=item.confidence, verification_status=item.verification_status, metadata={"period": item.period, "metric_name": item.metric_name, "metric_value": item.metric_value, "unit": item.unit, "notes": item.notes, "source_refs": [ref.model_dump(mode="json") for ref in item.source_refs]}))
+        if item.metric_name:
+            metric_node_id = f"METRIC:{item.metric_name}"
+            if not any(node.node_id == metric_node_id for node in nodes):
+                nodes.append(EvidenceGraphNode(node_id=metric_node_id, node_type="metric", label=item.metric_name, confidence=Confidence.HIGH, verification_status=VerificationStatus.VERIFIED))
+            edges.append(EvidenceGraphEdge(from_node_id=node_id, to_node_id=metric_node_id, relation=EvidenceRelation.MENTIONS, rationale="标准化财务指标", confidence=Confidence.HIGH))
         for ref in item.source_refs:
             source_node = f"SOURCE:{ref.source_id}"
             if source_node in source_nodes:
@@ -62,7 +68,9 @@ def build_evidence_graph(state: WorkflowState) -> EvidenceGraph:
             nodes.append(EvidenceGraphNode(node_id=claim_id, node_type="analysis_claim", label=finding.detail, confidence=finding.confidence, verification_status=VerificationStatus.PARTIALLY_SUPPORTED if finding.evidence_ids else VerificationStatus.UNSUPPORTED, metadata={"title": finding.title, "classification": finding.classification, "agent": output.agent_name}))
             for evidence_id in finding.evidence_ids:
                 edges.append(EvidenceGraphEdge(from_node_id=f"EVIDENCE:{evidence_id}", to_node_id=claim_id, relation=EvidenceRelation.SUPPORTS, rationale=finding.title, confidence=finding.confidence))
-    return EvidenceGraph(nodes=nodes, edges=_dedupe_edges(edges), conflicts=conflicts)
+    edges.extend(infer_semantic_edges(nodes))
+    semantic_conflicts = [edge.rationale or "语义冲突" for edge in edges if edge.relation == EvidenceRelation.CONTRADICTS and edge.rationale and edge.rationale.startswith("语义关系")]
+    return EvidenceGraph(nodes=nodes, edges=_dedupe_edges(edges), conflicts=list(dict.fromkeys([*conflicts, *semantic_conflicts])))
 
 
 def merge_evidence_graphs(existing: EvidenceGraph | None, incoming: EvidenceGraph) -> EvidenceGraph:
@@ -70,7 +78,9 @@ def merge_evidence_graphs(existing: EvidenceGraph | None, incoming: EvidenceGrap
         return incoming
     nodes = {node.node_id: node for node in existing.nodes}
     nodes.update({node.node_id: node for node in incoming.nodes})
-    return EvidenceGraph(nodes=list(nodes.values()), edges=_dedupe_edges([*existing.edges, *incoming.edges]), conflicts=list(dict.fromkeys([*existing.conflicts, *incoming.conflicts])))
+    merged_nodes = list(nodes.values())
+    semantic_edges = infer_semantic_edges(merged_nodes)
+    return EvidenceGraph(nodes=merged_nodes, edges=_dedupe_edges([*existing.edges, *incoming.edges, *semantic_edges]), conflicts=list(dict.fromkeys([*existing.conflicts, *incoming.conflicts])))
 
 
 def _normalized_value(value, unit: str | None):

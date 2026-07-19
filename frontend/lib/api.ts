@@ -105,6 +105,35 @@ export type ResearchProjectSummary = {
   updated_at: string
 }
 
+export type ProjectMaterial = {
+  material_id: string
+  project_id: string
+  run_id: string
+  version: number
+  title: string
+  source_type: string
+  modality: string
+  file_name?: string | null
+  period_covered?: string | null
+  publisher?: string | null
+  published_at?: string | null
+  parse_warnings: string[]
+  created_at: string
+}
+
+export type ResearchTask = {
+  task_id: string
+  title: string
+  detail: string
+  source_type: string
+  source_id: string
+  priority: number
+  status: string
+  evidence_ids: string[]
+}
+
+export type ResearchProjectDetail = { project: ResearchProjectSummary; timeline: ResearchRunSummary[]; materials: ProjectMaterial[] }
+
 export type EvidenceGraphNode = {
   node_id: string
   node_type: string
@@ -120,7 +149,7 @@ export type EvidenceGraphEdge = {
   edge_id: string
   from_node_id: string
   to_node_id: string
-  relation: 'from_source' | 'supports' | 'contradicts' | 'depends_on' | 'duplicates' | 'mentions'
+  relation: 'from_source' | 'supports' | 'contradicts' | 'depends_on' | 'duplicates' | 'mentions' | 'questioned_by'
   rationale?: string | null
   confidence: 'high' | 'medium' | 'low'
 }
@@ -140,6 +169,8 @@ export type ResearchQuestion = {
   status: 'unanswered' | 'partial' | 'answered' | 'conflicted'
   evidence_ids: string[]
   missing_materials: string[]
+  rationale?: string | null
+  required_evidence_types: string[]
 }
 
 export type ResearchMap = {
@@ -159,6 +190,7 @@ export type ThesisDraft = {
   assumptions: string[]
   falsification_conditions: string[]
   unknowns: string[]
+  scenarios: Array<{ name: string; assumptions: string[]; outcome: string; trigger_conditions: string[] }>
   user_internal_label?: string | null
 }
 
@@ -173,13 +205,16 @@ export type ThesisVersion = {
     evidence_coverage: number
     sell_side_repetition_risk: boolean
     confidence: 'high' | 'medium' | 'low'
+    ai_suggestions: string[]
+    relevant_support_ids: string[]
+    relevant_counter_ids: string[]
   }
   created_at: string
 }
 
 export type DefenseTurn = {
   turn_id: string
-  role: 'portfolio_manager' | 'industry_researcher' | 'financial_researcher' | 'risk_manager'
+  role: 'portfolio_manager' | 'investment_director' | 'industry_researcher' | 'financial_researcher' | 'risk_manager'
   question: string
   thesis_reference?: string | null
   evidence_ids: string[]
@@ -188,6 +223,7 @@ export type DefenseTurn = {
   score?: number | null
   feedback?: string | null
   passed?: boolean | null
+  score_breakdown: Record<string, number>
 }
 
 export type DefenseSession = {
@@ -207,9 +243,13 @@ export type CapabilityProfile = {
   user_id: string
   dimensions: Array<{
     dimension: string
-    score: number
+    score: number | null
     evidence: string[]
     repeated_errors: string[]
+    sample_count: number
+    confidence: 'high' | 'medium' | 'low'
+    trend: 'improving' | 'declining' | 'stable' | 'insufficient_data'
+    change?: number | null
   }>
   strengths: string[]
   priorities: string[]
@@ -323,6 +363,11 @@ export async function analyzeCompany(input: {
   companyName: string
   industry: string
   materials: FrontendMaterial[]
+  projectId?: string | null
+  researchObjective?: string
+  investmentHorizon?: string
+  initialView?: string
+  keyQuestion?: string
 }): Promise<AnalyzeResult> {
   const companyProfile: CompanyProfile = {
     ticker: input.stockCode,
@@ -346,14 +391,12 @@ export async function analyzeCompany(input: {
   })
 
   const formData = new FormData()
-  let projectId: string | null = null
+  let projectId: string | null = input.projectId || null
   if (getStoredToken()) {
-    const project = await createResearchProject({
-      company_profile: companyProfile,
-      research_objective: '完成证据驱动的买方研究',
-      key_question: '什么证据支持或推翻当前研究判断？',
-    })
-    projectId = project.project_id
+    if (!projectId) {
+      const project = await createResearchProject({ company_profile: companyProfile, research_objective: input.researchObjective, investment_horizon: input.investmentHorizon, initial_view: input.initialView, key_question: input.keyQuestion })
+      projectId = project.project_id
+    }
     formData.append('project_id', projectId)
   }
   formData.append('company_profile', JSON.stringify(companyProfile))
@@ -461,6 +504,18 @@ export async function createResearchProject(input: {
 
 export async function fetchResearchProjects(): Promise<ResearchProjectSummary[]> {
   const response = await fetch(`${API_BASE_URL}/api/projects`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchResearchProject(projectId: string): Promise<ResearchProjectDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response.json()
+}
+
+export async function fetchResearchTasks(projectId: string): Promise<ResearchTask[]> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/tasks`, { headers: authHeaders() })
   if (!response.ok) throw new Error(await parseError(response))
   return response.json()
 }

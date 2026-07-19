@@ -26,13 +26,11 @@ export function NavHeader({
   onLogout,
 }: NavHeaderProps) {
   const tabs = [
-    { id: 'input', label: '资料输入', disabled: false },
-    { id: 'analysis', label: '研究分析', disabled: !hasAnalysisData },
-    { id: 'memo', label: '研究 Memo', disabled: !hasAnalysisData },
-    { id: 'workspace', label: '研究工作台', disabled: false },
-    { id: 'review', label: '报告批改', disabled: false },
-    { id: 'history', label: '历史研究', disabled: false },
-    { id: 'capability', label: '能力成长', disabled: false },
+    { id: 'map', label: 'Research Map', disabled: false },
+    { id: 'evidence', label: 'Evidence', disabled: false },
+    { id: 'thesis', label: 'Thesis', disabled: false },
+    { id: 'memo', label: 'Memo', disabled: !hasAnalysisData },
+    { id: 'defense', label: 'Defense & Feedback', disabled: false },
   ]
   return (
     <header

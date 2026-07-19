@@ -18,8 +18,8 @@ const features = [
         <path d="M3 17h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
       </svg>
     ),
-    title: '9 步 Agent 工作流',
-    desc: '从资料整理到证据抽取，再到价值陷阱检查，系统按照机构买方研究准则逐步执行，每步输出可追溯。',
+    title: '持续研究工作台',
+    desc: '围绕研究问题、证据、Thesis和答辩持续更新，同一公司无需每次从头开始。',
   },
   {
     icon: (
@@ -78,20 +78,16 @@ const features = [
 ]
 
 const workflowSteps = [
-  { num: '01', name: '机构理念召回', desc: '载入价值投资研究准则' },
-  { num: '02', name: '资料整理', desc: '识别资料类型与覆盖缺口' },
-  { num: '03', name: '证据抽取', desc: '抽取事实、观点、待验证项' },
-  { num: '04', name: '财务质量分析', desc: '现金流 / 分红 / 资产负债表', parallel: true },
-  { num: '05', name: '商业模式分析', desc: '护城河 / 竞争优势', parallel: true },
-  { num: '06', name: '多方观点比较', desc: '管理层 vs 卖方 vs 市场', parallel: true },
-  { num: '07', name: '价值陷阱检查', desc: '反证风险专项审查' },
-  { num: '08', name: '合规门禁', desc: '证据完整性与合规审查' },
-  { num: '09', name: '买方 Memo 生成', desc: '结构化研究输出' },
+  { num: '01', name: 'Research Map', desc: '建立问题树与研究优先级' },
+  { num: '02', name: 'Evidence', desc: '维护资料库、证据关系与冲突' },
+  { num: '03', name: 'Thesis', desc: '形成变量、反证与三种情景' },
+  { num: '04', name: 'Memo', desc: '共同完成可追溯研究报告' },
+  { num: '05', name: 'Defense & Feedback', desc: '答辩、任务回流与能力成长' },
 ]
 
 const stats = [
   { value: '7', label: '价值投资分析维度' },
-  { value: '9', label: 'Agent 工作流步骤' },
+  { value: '5', label: '核心研究任务区' },
   { value: '4', label: '证据标注类型' },
   { value: '11', label: 'Memo 标准章节' },
 ]
@@ -157,7 +153,7 @@ export function LandingPage({ onEnterApp, onLogin, onSignup }: LandingPageProps)
                 登录
               </button>
               <button
-                onClick={onSignup}
+                onClick={onEnterApp}
                 className="px-4 py-1.5 text-sm font-medium rounded-md transition-opacity hover:opacity-90"
                 style={{
                   backgroundColor: 'oklch(0.65 0.14 195)',
@@ -352,11 +348,11 @@ export function LandingPage({ onEnterApp, onLogin, onSignup }: LandingPageProps)
                 className="text-3xl font-bold mb-4 text-balance"
                 style={{ color: 'oklch(0.93 0.005 240)' }}
               >
-                9 步 DAG Agent
-                <br />工作流
+                证据驱动研究
+                <br />闭环
               </h2>
               <p className="text-sm leading-relaxed mb-6" style={{ color: 'oklch(0.55 0.01 240)' }}>
-                按照机构买方研究逻辑设计的有向无环图工作流。并行分析模块（财务质量、商业模式、多方观点比较）同步运行后汇总，最终通过双重合规门禁生成 Memo。
+                从研究任务、资料库和证据图谱出发，逐步形成Thesis、Memo与投委会答辩，并把每次训练沉淀为个人能力画像。
               </p>
               <button
                 onClick={onSignup}
@@ -377,13 +373,13 @@ export function LandingPage({ onEnterApp, onLogin, onSignup }: LandingPageProps)
                   key={i}
                   className="flex items-center gap-3 rounded-lg px-4 py-3 border"
                   style={{
-                    borderColor: step.parallel ? 'oklch(0.75 0.15 75 / 0.2)' : 'oklch(0.22 0.01 240)',
-                    backgroundColor: step.parallel ? 'oklch(0.75 0.15 75 / 0.04)' : 'oklch(0.14 0.008 240)',
+                    borderColor: 'oklch(0.22 0.01 240)',
+                    backgroundColor: 'oklch(0.14 0.008 240)',
                   }}
                 >
                   <span
                     className="text-xs font-mono shrink-0 w-7"
-                    style={{ color: step.parallel ? 'oklch(0.75 0.15 75)' : 'oklch(0.65 0.14 195)' }}
+                    style={{ color: 'oklch(0.65 0.14 195)' }}
                   >
                     {step.num}
                   </span>
@@ -395,18 +391,6 @@ export function LandingPage({ onEnterApp, onLogin, onSignup }: LandingPageProps)
                       {step.desc}
                     </span>
                   </div>
-                  {step.parallel && (
-                    <span
-                      className="text-[10px] font-medium px-1.5 py-0.5 rounded border"
-                      style={{
-                        borderColor: 'oklch(0.75 0.15 75 / 0.3)',
-                        color: 'oklch(0.75 0.15 75)',
-                        backgroundColor: 'oklch(0.75 0.15 75 / 0.08)',
-                      }}
-                    >
-                      并行
-                    </span>
-                  )}
                 </div>
               ))}
             </div>

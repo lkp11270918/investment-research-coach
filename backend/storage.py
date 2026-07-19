@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ from .models import (
     ThesisVersion,
     DefenseSession,
     CapabilityProfile,
+    ProjectMaterial,
+    ResearchTask,
 )
 
 
@@ -157,6 +160,9 @@ def _init_postgres_projects(conn: Any) -> None:
     conn.execute("CREATE TABLE IF NOT EXISTS thesis_versions (thesis_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, UNIQUE(project_id, version))")
     conn.execute("CREATE TABLE IF NOT EXISTS defense_sessions (session_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS capability_profiles (profile_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS project_materials (material_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, run_id TEXT NOT NULL, logical_key TEXT NOT NULL, content_hash TEXT NOT NULL, version INTEGER NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, UNIQUE(project_id, content_hash))")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_project_materials_project_created ON project_materials (project_id, created_at ASC)")
+    conn.execute("CREATE TABLE IF NOT EXISTS research_tasks (task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, source_id TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, UNIQUE(project_id, source_id))")
 
 
 def _init_sqlite_projects(conn: sqlite3.Connection) -> None:
@@ -181,6 +187,9 @@ def _init_sqlite_projects(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE TABLE IF NOT EXISTS thesis_versions (thesis_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(project_id, version))")
     conn.execute("CREATE TABLE IF NOT EXISTS defense_sessions (session_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS capability_profiles (profile_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS project_materials (material_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, run_id TEXT NOT NULL, logical_key TEXT NOT NULL, content_hash TEXT NOT NULL, version INTEGER NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(project_id, content_hash))")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_project_materials_project_created ON project_materials (project_id, created_at ASC)")
+    conn.execute("CREATE TABLE IF NOT EXISTS research_tasks (task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL, source_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(project_id, source_id))")
 
 
 def save_user_run(*, user_id: str | None, run_type: str, state: WorkflowState, project_id: str | None = None) -> None:
@@ -228,6 +237,7 @@ def save_user_run(*, user_id: str | None, run_type: str, state: WorkflowState, p
                     (project_id, state.run_id, user_id),
                 )
                 _upsert_project_graph_postgres(conn, user_id, project_id, state.evidence_graph)
+                _save_project_materials(conn, True, user_id, project_id, state)
                 conn.execute(
                     "UPDATE research_projects SET updated_at = %s WHERE project_id = %s AND user_id = %s",
                     (_now(), project_id, user_id),
@@ -250,10 +260,74 @@ def save_user_run(*, user_id: str | None, run_type: str, state: WorkflowState, p
                 (project_id, state.run_id, user_id),
             )
             _upsert_project_graph_sqlite(conn, user_id, project_id, state.evidence_graph)
+            _save_project_materials(conn, False, user_id, project_id, state)
             conn.execute(
                 "UPDATE research_projects SET updated_at = ? WHERE project_id = ? AND user_id = ?",
                 (_now().isoformat(), project_id, user_id),
             )
+
+
+def _save_project_materials(conn: Any, postgres: bool, user_id: str, project_id: str, state: WorkflowState) -> None:
+    placeholder = "%s" if postgres else "?"
+    for raw in state.raw_materials:
+        digest = hashlib.sha256((raw.content + "\0" + (raw.file_name or "") + "\0" + raw.source_type.value).encode("utf-8")).hexdigest()
+        exists = conn.execute(f"SELECT material_id FROM project_materials WHERE project_id={placeholder} AND content_hash={placeholder}", (project_id, digest)).fetchone()
+        if exists:
+            continue
+        logical_key = (raw.file_name or raw.title).strip().lower()
+        row = conn.execute(f"SELECT COALESCE(MAX(version),0) FROM project_materials WHERE project_id={placeholder} AND logical_key={placeholder}", (project_id, logical_key)).fetchone()
+        material = ProjectMaterial(
+            project_id=project_id, run_id=state.run_id, version=int(row[0]) + 1,
+            title=raw.title, source_type=raw.source_type, modality=raw.modality,
+            file_name=raw.file_name, url=raw.url, period_covered=raw.period_covered,
+            publisher=raw.publisher, published_at=raw.published_at, content_hash=digest,
+            content=raw.content, blocks=raw.blocks, parse_warnings=raw.parse_warnings,
+        )
+        payload = json.dumps(material.model_dump(mode="json"), ensure_ascii=False)
+        values = (material.material_id, project_id, user_id, state.run_id, logical_key, digest, material.version, payload, material.created_at if postgres else material.created_at.isoformat())
+        sql = "INSERT INTO project_materials(material_id,project_id,user_id,run_id,logical_key,content_hash,version,payload,created_at) VALUES(" + ",".join([placeholder] * 9) + ")"
+        if postgres:
+            sql = sql.replace(f"{placeholder},{placeholder})", f"{placeholder}::jsonb,{placeholder})")
+        conn.execute(sql, values)
+
+
+def list_project_materials(user_id: str, project_id: str) -> list[ProjectMaterial]:
+    database_url = get_settings().database_url
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn:
+            rows = conn.execute("SELECT payload FROM project_materials WHERE user_id=%s AND project_id=%s ORDER BY created_at ASC", (user_id, project_id)).fetchall()
+    else:
+        with _sqlite_connection(database_url) as conn:
+            rows = conn.execute("SELECT payload FROM project_materials WHERE user_id=? AND project_id=? ORDER BY created_at ASC", (user_id, project_id)).fetchall()
+    return [ProjectMaterial.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0]) for row in rows]
+
+
+def sync_defense_tasks(user_id: str, session: DefenseSession) -> list[ResearchTask]:
+    tasks = [ResearchTask(project_id=session.project_id, title=f"补强{turn.role.value}答辩", detail=turn.feedback or "补充证据并重答", source_type="defense", source_id=turn.turn_id, evidence_ids=turn.answer_evidence_ids) for turn in session.turns if turn.passed is False]
+    database_url = get_settings().database_url
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn:
+            for task in tasks:
+                payload = json.dumps(task.model_dump(mode="json"), ensure_ascii=False)
+                conn.execute("INSERT INTO research_tasks(task_id,project_id,user_id,source_id,payload,created_at) VALUES(%s,%s,%s,%s,%s::jsonb,%s) ON CONFLICT(project_id,source_id) DO UPDATE SET payload=EXCLUDED.payload", (task.task_id, task.project_id, user_id, task.source_id, payload, task.created_at))
+    else:
+        with _sqlite_connection(database_url) as conn:
+            for task in tasks:
+                payload = json.dumps(task.model_dump(mode="json"), ensure_ascii=False)
+                conn.execute("INSERT INTO research_tasks(task_id,project_id,user_id,source_id,payload,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(project_id,source_id) DO UPDATE SET payload=excluded.payload", (task.task_id, task.project_id, user_id, task.source_id, payload, task.created_at.isoformat()))
+    return list_research_tasks(user_id, session.project_id)
+
+
+def list_research_tasks(user_id: str, project_id: str) -> list[ResearchTask]:
+    database_url = get_settings().database_url
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: rows = conn.execute("SELECT payload FROM research_tasks WHERE user_id=%s AND project_id=%s ORDER BY created_at ASC", (user_id, project_id)).fetchall()
+    else:
+        with _sqlite_connection(database_url) as conn: rows = conn.execute("SELECT payload FROM research_tasks WHERE user_id=? AND project_id=? ORDER BY created_at ASC", (user_id, project_id)).fetchall()
+    return [ResearchTask.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0]) for row in rows]
 
 
 def _upsert_project_graph_postgres(conn: Any, user_id: str, project_id: str, incoming: EvidenceGraph) -> None:
@@ -420,7 +494,7 @@ def get_research_project(user_id: str, project_id: str) -> ResearchProjectDetail
     if not row:
         return None
     timeline = [_summary_from_row(run) for run in runs]
-    return ResearchProjectDetail(project=_project_from_row(row, len(timeline)), timeline=timeline)
+    return ResearchProjectDetail(project=_project_from_row(row, len(timeline)), timeline=timeline, materials=list_project_materials(user_id, project_id))
 
 
 def update_research_project(user_id: str, project_id: str, request: ResearchProjectUpdate) -> ResearchProjectDetail | None:

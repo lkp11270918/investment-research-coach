@@ -96,9 +96,10 @@ export function CapabilityPanel({ isLoggedIn, onLogin }: CapabilityPanelProps) {
                   <div key={dimension.dimension}>
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-sm text-foreground">{dimensionLabels[dimension.dimension] || dimension.dimension}</span>
-                      <span className="font-mono text-xs text-primary">{dimension.score.toFixed(0)}</span>
+                      <span className="font-mono text-xs text-primary">{dimension.score == null ? '数据不足' : dimension.score.toFixed(0)}</span>
                     </div>
-                    <Progress value={dimension.score} />
+                    <Progress value={dimension.score || 0} />
+                    <div className="mt-1 flex gap-3 text-[10px] text-muted-foreground"><span>{dimension.sample_count}个样本</span><span>可信度：{dimension.confidence}</span><span>{dimension.trend === 'improving' ? '上升' : dimension.trend === 'declining' ? '下降' : dimension.trend === 'stable' ? '稳定' : '数据不足'}{dimension.change != null ? ` ${dimension.change > 0 ? '+' : ''}${dimension.change}` : ''}</span></div>
                     {!!dimension.evidence.length && <div className="mt-2 text-[11px] text-muted-foreground">依据：{dimension.evidence[dimension.evidence.length - 1]}</div>}
                     {dimension.repeated_errors.map(item => <div key={item} className="mt-1 text-[11px] text-warning">重复问题：{item}</div>)}
                   </div>

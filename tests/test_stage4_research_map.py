@@ -7,6 +7,17 @@ from backend.research_map import generate_research_map
 
 
 class ResearchMapTest(unittest.TestCase):
+    def test_user_intake_changes_plan_and_unverified_evidence_does_not_answer(self) -> None:
+        from backend.models import EvidenceGraph, EvidenceGraphNode, VerificationStatus
+
+        graph = EvidenceGraph(nodes=[EvidenceGraphNode(node_id="EVIDENCE:X", node_type="fact", label="海外业务增长", evidence_id="X", verification_status=VerificationStatus.TO_BE_VERIFIED)])
+        plan = generate_research_map("P", "医药", graph, company_name="测试药企", research_objective="验证研发回报", initial_view="海外业务增长", key_question="研发管线能否兑现")
+        questions = [item.question for item in plan.questions]
+        self.assertEqual(questions[0], "研发管线能否兑现")
+        self.assertTrue(any("核心产品生命周期" in item for item in questions))
+        self.assertTrue(any("初始判断" in item for item in questions))
+        initial = next(item for item in plan.questions if item.category == "initial_view_test")
+        self.assertEqual(initial.status.value, "unanswered")
     def test_industry_questions_and_evidence_status(self) -> None:
         nodes = [
             EvidenceGraphNode(node_id="EVIDENCE:E1", node_type="financial_fact", label="经营现金流连续三年稳定", evidence_id="E1", confidence=Confidence.HIGH, verification_status=VerificationStatus.VERIFIED),

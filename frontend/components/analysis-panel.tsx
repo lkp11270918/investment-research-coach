@@ -10,6 +10,11 @@ export interface AnalysisData {
   companyName: string
   industry: string
   materials: Array<{ id: string; type: string; name: string; status: 'ready' | 'missing'; content?: string }>
+  projectId?: string | null
+  researchObjective?: string
+  investmentHorizon?: string
+  initialView?: string
+  keyQuestion?: string
 }
 
 interface AgentStep {
@@ -303,224 +308,11 @@ export function AnalysisPanel({ data, onComplete }: AnalysisPanelProps) {
     }
   }
 
-  const filledMaterials = data.materials.filter(m => m.status === 'ready')
-
   return (
     <div className="mx-auto max-w-screen-2xl px-6 py-8">
       <div className="grid grid-cols-12 gap-6">
-        {/* Left: Overview */}
-        <div className="col-span-4 space-y-4">
-          {/* Company card */}
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <div className="text-lg font-semibold text-foreground">{data.companyName}</div>
-                <div className="text-xs text-muted-foreground font-mono">{data.stockCode} · {data.industry}</div>
-              </div>
-              <Badge className={`text-xs ${isComplete ? 'bg-success/15 text-success border-success/30' : started ? 'bg-primary/15 text-primary border-primary/30' : 'bg-secondary text-muted-foreground'}`}>
-                {isComplete ? '分析完成' : started ? '分析中' : '待启动'}
-              </Badge>
-            </div>
-
-            {started && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>总体进度</span>
-                  <span className="font-medium text-foreground">{progress}%</span>
-                </div>
-                <Progress value={progress} className="h-1.5" />
-              </div>
-            )}
-          </div>
-
-          {/* Materials summary */}
-          <div className="rounded-lg border border-border bg-card p-4 space-y-2">
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">资料包状态</div>
-            {data.materials.map(m => (
-              <div key={m.id} className="flex items-center gap-2 text-xs">
-                <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${m.status === 'ready' ? 'bg-success' : 'bg-muted-foreground/30'}`} />
-                <span className={m.status === 'ready' ? 'text-foreground' : 'text-muted-foreground/50 line-through'}>{m.type}</span>
-                {m.status === 'missing' && <span className="text-muted-foreground/50">（缺失）</span>}
-              </div>
-            ))}
-          </div>
-
-          {/* Agent list */}
-          <div className="rounded-lg border border-border bg-card p-4 space-y-1.5">
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Agent 工作流（9 步）</div>
-            {steps.map((step, idx) => (
-              <div
-                key={step.id}
-                className="flex items-center gap-2.5 text-xs cursor-pointer py-0.5"
-                onClick={() => setExpandedStep(expandedStep === step.id ? null : step.id)}
-              >
-                {statusIcon(step.status)}
-                <span className={`flex-1 truncate ${
-                  step.status === 'running' ? 'text-primary font-medium' :
-                  step.status === 'done' || step.status === 'warning' ? 'text-foreground' :
-                  'text-muted-foreground'
-                }`}>
-                  {step.name}
-                </span>
-                {step.status === 'warning' && <Badge className="text-[9px] h-3.5 px-1 bg-warning/15 text-warning border-warning/30">警告</Badge>}
-              </div>
-            ))}
-          </div>
-
-          {/* Action */}
-          {!started && (
-            <button
-              onClick={startAnalysis}
-              className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-all"
-            >
-              启动 AI 分析
-            </button>
-          )}
-
-          {isComplete && (
-            <button
-              onClick={() => analysisResult && onComplete(analysisResult)}
-              disabled={!analysisResult}
-              className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-all"
-            >
-              查看研究 Memo
-            </button>
-          )}
-        </div>
-
-        {/* Right: Step details */}
-        <div className="col-span-8 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-foreground">
-              {started ? 'Agent 实时运行日志' : 'DAG 工作流说明'}
-            </h2>
-            {started && (
-              <div className="text-xs text-muted-foreground font-mono">
-                {steps.filter(s => s.status === 'done' || s.status === 'warning').length} / {steps.length} 完成
-              </div>
-            )}
-          </div>
-
-          {!started && (
-            <div className="rounded-lg border border-border bg-card p-6 space-y-4">
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                系统将按照以下 DAG 工作流执行，共 9 个专项 Agent。并行分析模块���财务质量、商业模式、管理层观点比较）将同步运行后汇总。
-              </p>
-              <div className="flex flex-col gap-2">
-                {agentSteps.map((step, idx) => (
-                  <div key={step.id} className="flex items-start gap-3 p-3 rounded-md bg-secondary/50 border border-border/50">
-                    <div className="shrink-0 h-5 w-5 rounded bg-muted flex items-center justify-center text-[10px] font-mono text-muted-foreground">
-                      {idx + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-foreground">{step.name}</div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">{step.description}</div>
-                      <div className="text-[10px] text-muted-foreground/60 font-mono mt-0.5">{step.nameEn}</div>
-                    </div>
-                    {[3, 4, 5].includes(idx) && (
-                      <Badge variant="outline" className="text-[9px] shrink-0 border-primary/30 text-primary">并行</Badge>
-                    )}
-                    {[6, 7].includes(idx) && (
-                      <Badge variant="outline" className="text-[9px] shrink-0 border-warning/30 text-warning">门禁</Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {started && steps.map((step) => (
-            (step.status === 'done' || step.status === 'warning' || step.status === 'running') && (
-              <div
-                key={step.id}
-                className={`rounded-lg border bg-card overflow-hidden transition-all fade-in-up ${
-                  step.status === 'running'
-                    ? 'border-primary/40'
-                    : step.status === 'warning'
-                    ? 'border-warning/30'
-                    : 'border-border'
-                }`}
-              >
-                <button
-                  className="w-full flex items-center gap-3 p-4 text-left"
-                  onClick={() => setExpandedStep(expandedStep === step.id ? null : step.id)}
-                >
-                  {statusIcon(step.status)}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">{step.name}</span>
-                      {step.status === 'running' && (
-                        <span className="text-xs text-primary animate-pulse">运行中…</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground font-mono">{step.nameEn}</div>
-                  </div>
-                  {step.warnings && step.warnings.length > 0 && (
-                    <div className="flex gap-1">
-                      {step.warnings.map((w, i) => (
-                        <Badge key={i} className="text-[9px] bg-warning/10 text-warning border-warning/20">{w}</Badge>
-                      ))}
-                    </div>
-                  )}
-                  <svg
-                    className={`h-4 w-4 text-muted-foreground transition-transform ${expandedStep === step.id ? 'rotate-180' : ''}`}
-                    fill="none" viewBox="0 0 16 16"
-                  >
-                    <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </button>
-
-                {expandedStep === step.id && step.output && (
-                  <div className="border-t border-border bg-secondary/20 px-4 py-3 space-y-1.5">
-                    {step.output.map((line, i) => (
-                      <div key={i} className={`text-xs font-mono leading-relaxed ${
-                        line.startsWith('✓') ? 'text-success' :
-                        line.startsWith('⚠') ? 'text-warning' :
-                        line.startsWith('→') ? 'text-primary' :
-                        line.startsWith('【') ? 'text-foreground' :
-                        'text-muted-foreground'
-                      }`}>
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          ))}
-
-          {apiError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-              <div className="text-sm font-semibold text-destructive">分析请求失败</div>
-              <div className="mt-1 text-xs text-muted-foreground leading-relaxed">{apiError}</div>
-            </div>
-          )}
-
-          {isComplete && (
-            <div className="rounded-lg border border-success/30 bg-success/5 p-4 fade-in-up">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-success/20 flex items-center justify-center">
-                  <svg className="h-4 w-4 text-success" fill="none" viewBox="0 0 16 16">
-                    <path d="M3 8l4 4 6-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-foreground">研究分析完成</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    已完成后端多 Agent 分析 · 生成 {analysisResult?.state.evidence_items?.length || 0} 条证据 · 可在上方展开查看真实 Agent 输出
-                  </div>
-                </div>
-                <button
-                  onClick={() => analysisResult && onComplete(analysisResult)}
-                  disabled={!analysisResult}
-                  className="ml-auto shrink-0 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
-                >
-                  查看研究 Memo
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <div className="col-span-4 rounded-lg border border-border bg-card p-5"><div className="flex items-start justify-between"><div><div className="text-lg font-semibold text-foreground">{data.companyName}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{data.stockCode} · {data.industry}</div></div><Badge className={isComplete ? 'border-success/30 bg-success/10 text-success' : 'border-primary/30 bg-primary/10 text-primary'}>{isComplete ? '研究底稿已更新' : started ? '正在处理' : '待启动'}</Badge></div><div className="mt-5 text-xs text-muted-foreground">研究目的</div><div className="mt-1 text-sm text-foreground">{data.researchObjective || '证据驱动的买方研究'}</div><div className="mt-4 text-xs text-muted-foreground">核心问题</div><div className="mt-1 text-sm leading-relaxed text-foreground">{data.keyQuestion || '什么证据支持或推翻当前判断？'}</div>{!started && <button onClick={startAnalysis} className="mt-6 w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">开始研究</button>}</div>
+        <div className="col-span-8 rounded-lg border border-border bg-card p-6"><div className="flex items-center justify-between"><div className="text-sm font-semibold text-foreground">研究资料处理</div><span className="font-mono text-xs text-primary">{progress}%</span></div><Progress value={progress} className="mt-3 h-1.5" /><div className="mt-6 grid grid-cols-4 gap-3">{['资料标准化', '证据与关系', '基本面与反证', '证据门禁'].map((label, index) => { const threshold = (index + 1) * 25; const done = progress >= threshold; const active = progress < threshold && progress >= index * 25; return <div key={label} className={`rounded-md border p-3 ${done ? 'border-success/30 bg-success/5' : active ? 'border-primary/40 bg-primary/5' : 'border-border bg-secondary/20'}`}><div className={`text-xs font-medium ${done ? 'text-success' : active ? 'text-primary' : 'text-muted-foreground'}`}>{label}</div><div className="mt-1 text-[10px] text-muted-foreground">{done ? '完成' : active ? '处理中' : '等待'}</div></div> })}</div><div className="mt-6 grid grid-cols-3 gap-3">{data.materials.filter(item => item.status === 'ready').map(item => <div key={item.id} className="rounded-md border border-border bg-secondary/20 p-3"><div className="truncate text-xs text-foreground">{item.type}</div><div className="mt-1 text-[10px] text-muted-foreground">已加入资料包</div></div>)}</div>{apiError && <div className="mt-5 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{apiError}</div>}{isComplete && <div className="mt-5 rounded-md border border-success/30 bg-success/5 p-4 text-sm text-success">资料、证据图谱和研究地图已更新。</div>}</div>
       </div>
     </div>
   )
