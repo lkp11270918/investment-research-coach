@@ -10,9 +10,9 @@ from .production import ProductionGuardMiddleware, production_configuration_repo
 
 from .auth import authenticate_user, create_access_token, create_user, delete_user_account, get_current_user, get_optional_current_user, init_auth_db, to_auth_user
 from .file_parsers import FileParseError, cross_check_multimodal_materials, parse_uploaded_file
-from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, CapabilityProfile, DefenseAnswerRequest, DefenseSession, EvidenceEdgeReview, EvidenceGraph, EvidenceNodeReview, HealthResponse, LoginRequest, MaterialBlockReview, MemoSuggestionDecision, MemoVersion, MemoVersionCreate, ProjectMaterial, RawMaterial, RegisterRequest, ResearchBehaviorEvent, ResearchJudgment, ResearchMap, ResearchProjectCreate, ResearchProjectDetail, ResearchProjectSummary, ResearchProjectUpdate, ResearchRunDetail, ResearchRunSummary, ResearchTask, ResearchTaskUpdate, ReviewRequest, ThesisDraft, ThesisVersion, UrlIngestRequest
+from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, CapabilityProfile, DefenseAnswerRequest, DefenseSession, EvidenceEdgeReview, EvidenceGraph, EvidenceNodeReview, HealthResponse, LoginRequest, MaterialBlockReview, MemoSuggestionDecision, MemoVersion, MemoVersionCreate, ProjectMaterial, RawMaterial, RegisterRequest, ResearchBehaviorEvent, ResearchJudgment, ResearchMap, ResearchProjectCreate, ResearchProjectDetail, ResearchProjectSummary, ResearchProjectUpdate, ResearchRunDetail, ResearchRunSummary, ResearchTask, ResearchTaskUpdate, ReviewRequest, ThesisDraft, ThesisVersion, UrlIngestRequest, ValuationAssumptions, ValuationAnalysis
 from .research_map import generate_research_map
-from .storage import create_research_project, decide_memo_suggestion, get_defense_session, get_project_evidence_graph, get_research_project, get_user_run, init_research_runs_db, list_behavior_events, list_capability_profiles, list_defense_sessions, list_evidence_graph_versions, list_memo_versions, list_project_materials, list_research_map_versions, list_research_projects, list_research_tasks, list_thesis_versions, list_user_runs, project_belongs_to_user, record_behavior_event, review_evidence_for_material_block, review_project_evidence_edge, review_project_evidence_node, review_project_material_block, save_capability_profile, save_defense_session, save_memo_version, save_research_map_version, save_thesis_version, save_user_run, sync_defense_tasks, update_memo_suggestions, update_research_project, update_research_task, upsert_research_tasks
+from .storage import create_research_project, decide_memo_suggestion, get_defense_session, get_project_evidence_graph, get_research_project, get_user_run, init_research_runs_db, list_behavior_events, list_capability_profiles, list_defense_sessions, list_evidence_graph_versions, list_memo_versions, list_project_materials, list_research_map_versions, list_research_projects, list_research_tasks, list_thesis_versions, list_user_runs, project_belongs_to_user, record_behavior_event, review_evidence_for_material_block, review_project_evidence_edge, review_project_evidence_node, review_project_material_block, save_capability_profile, save_defense_session, save_memo_version, save_research_map_version, save_thesis_version, save_user_run, sync_defense_tasks, update_memo_suggestions, update_research_project, update_research_task, upsert_research_tasks, get_valuation_assumptions, save_valuation_assumptions
 from .capability_profile import build_capability_profile
 from .defense import answer_defense, start_defense
 from .thesis_builder import assess_thesis
@@ -22,6 +22,7 @@ from .memo_coauthor import generate_memo_suggestions
 from .llm_client import OpenAIClient
 from .task_feedback import tasks_from_memo, tasks_from_research_state, tasks_from_thesis
 from .research_quality import assess_graph_quality
+from .valuation import analyze_valuation
 
 
 app = FastAPI(
@@ -340,7 +341,21 @@ def project_research_quality(project_id: str, current_user: AuthUser = Depends(g
     graph = get_project_evidence_graph(current_user.user_id, project_id) or EvidenceGraph()
     live_quality = assess_graph_quality(graph)
     if not latest: return {"valuation_analysis": {}, "financial_anomalies": [], "evidence_graph_quality": live_quality.model_dump(mode="json")}
-    return {"valuation_analysis": latest.state.valuation_analysis.model_dump(mode="json"), "financial_anomalies": [item.model_dump(mode="json") for item in latest.state.financial_anomalies], "evidence_graph_quality": live_quality.model_dump(mode="json")}
+    assumptions=get_valuation_assumptions(current_user.user_id,project_id)
+    valuation=analyze_valuation(latest.state.evidence_items,detail.project.company_profile.industry,assumptions)
+    return {"valuation_analysis": valuation.model_dump(mode="json"), "valuation_assumptions": assumptions.model_dump(mode="json"), "financial_anomalies": [item.model_dump(mode="json") for item in latest.state.financial_anomalies], "evidence_graph_quality": live_quality.model_dump(mode="json")}
+
+@app.put("/api/projects/{project_id}/valuation-assumptions", response_model=ValuationAnalysis)
+def update_valuation_assumptions(project_id: str, request: ValuationAssumptions, current_user: AuthUser = Depends(get_current_user)) -> ValuationAnalysis:
+    detail=get_research_project(current_user.user_id,project_id)
+    if not detail or not detail.timeline: raise HTTPException(status_code=404,detail="未找到可估值的研究项目")
+    if request.terminal_growth >= min(request.wacc,request.cost_of_equity): raise HTTPException(status_code=400,detail="永续增长率必须低于WACC和股权成本")
+    if not request.bear_growth <= request.base_growth <= request.bull_growth: raise HTTPException(status_code=400,detail="增长率必须满足悲观情景 ≤ 基准情景 ≤ 乐观情景")
+    saved=save_valuation_assumptions(current_user.user_id,project_id,request)
+    latest=get_user_run(current_user.user_id,detail.timeline[-1].run_id)
+    if not latest: raise HTTPException(status_code=404,detail="未找到研究记录")
+    record_behavior_event(ResearchBehaviorEvent(user_id=current_user.user_id,project_id=project_id,action="confirm_valuation_assumptions",dimension="valuation",outcome="confirmed" if saved.confirmed else "draft",score=90 if saved.confirmed else 70,object_type="valuation_assumptions",object_id=project_id))
+    return analyze_valuation(latest.state.evidence_items,detail.project.company_profile.industry,saved)
 
 @app.get("/api/capability-profile/current", response_model=CapabilityProfile)
 def current_capability_profile(current_user: AuthUser = Depends(get_current_user)) -> CapabilityProfile:

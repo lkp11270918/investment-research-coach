@@ -28,7 +28,7 @@ interface AgentStep {
   warnings?: string[]
 }
 
-const agentSteps: AgentStep[] = [
+const legacyAgentSteps: AgentStep[] = [
   {
     id: 'doctrine',
     name: '机构理念与案例召回',
@@ -174,10 +174,23 @@ const agentSteps: AgentStep[] = [
   },
 ]
 
+// The detailed legacy definitions above remain readable for historical runs;
+// normal users now see stable research stages instead of internal module count.
+const agentSteps: AgentStep[] = [
+  { id: 'planning', name: '研究路径规划', nameEn: 'Research Planning', description: '识别公司类型、优先问题和所需分析', status: 'pending' },
+  { id: 'evidence', name: '资料整理与证据构建', nameEn: 'Evidence Building', description: '解析资料、定位来源并更新证据图谱', status: 'pending' },
+  { id: 'analysis', name: '专项研究分析', nameEn: 'Research Analysis', description: '按计划并行完成财务、商业模式、观点和估值分析', status: 'pending' },
+  { id: 'judge', name: '反证与质量门禁', nameEn: 'Red Team & Judge', description: '检查反方证据、价值陷阱、证据充分性和合规性', status: 'pending' },
+  { id: 'writing', name: '研究 Memo 生成', nameEn: 'Memo Writing', description: '仅将通过门禁的内容写入标准 Memo', status: 'pending' },
+]
+
 const backendOutputKeyByStepId: Record<string, string> = {
+  planning: 'research_planner',
+  analysis: 'research_analyst',
+  judge: 'red_team_judge',
   doctrine: 'firm_doctrine_case_retrieval',
   material: 'material_organizer',
-  evidence: 'evidence_extractor',
+  evidence: 'evidence',
   financial: 'financial_quality_dividend',
   business: 'business_model_moat',
   management: 'management_view_comparison',
@@ -217,7 +230,12 @@ function formatBackendOutput(output?: BackendAgentOutput): string[] {
 
 function stepsFromBackendResult(result: AnalyzeResult): AgentStep[] {
   return agentSteps.map(step => {
-    const output = result.state.agent_outputs[backendOutputKeyByStepId[step.id]]
+    const key = backendOutputKeyByStepId[step.id]
+    const output = result.state.agent_outputs[key] || result.state.skill_outputs?.[key]
+    if (step.id === 'writing') {
+      const writingEvent = result.state.workflow_events?.find(item => item.stage === 'writing')
+      return {...step,status:writingEvent?.status === 'completed' ? 'done' : 'warning',output:[writingEvent?.status === 'completed' ? '已按门禁批准内容生成 Memo。' : '门禁未通过，未生成正式 Memo。']}
+    }
     return {
       ...step,
       status: statusFromBackend(output),

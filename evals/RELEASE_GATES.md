@@ -27,6 +27,9 @@ The final release gate requires:
 - critical financial anomaly recall >= 90%;
 - multimodal metric-period-unit cross-check accuracy >= 95%;
 - capability-profile dimension agreement with expert reviewers >= 85%.
+- new workflows publish exactly four main Agent outputs while preserving all
+  evidence, analysis, valuation, Judge, Memo, Review, and history behavior;
+- historical nine-Agent runs remain readable without database rewrites.
 
 ## 2026-07-20 Engineering Acceptance Record
 

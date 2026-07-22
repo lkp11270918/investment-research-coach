@@ -7,7 +7,7 @@ def build_research_judgment(state: WorkflowState) -> ResearchJudgment:
     source_by_id = {source.source_id: source for source in state.source_documents}
     evidence_by_id = {item.evidence_id: item for item in state.evidence_items}
     sell_side_sources = {source.source_id for source in state.source_documents if source.source_type == SourceType.SELL_SIDE_SUMMARY}
-    view_output = state.agent_outputs.get("management_view_comparison")
+    view_output = state.output_for("management_view_comparison")
     points: list[ViewComparisonPoint] = []
     if view_output:
         for finding in view_output.findings:
@@ -20,7 +20,7 @@ def build_research_judgment(state: WorkflowState) -> ResearchJudgment:
     if len(represented_sources) >= 2 and not any(point.point_type == "divergence" for point in points):
         points.append(ViewComparisonPoint(point_type="divergence", topic="卖方假设尚未形成可比口径", detail="已存在多份卖方来源，但尚未识别可验证的预测假设差异。不能把并列摘要当作观点比较。", evidence_ids=[item.evidence_id for item in sell_side_evidence], source_ids=sorted(represented_sources), buyer_verification_question="统一各家收入增速、利润率、资本开支和估值期间后重新比较。"))
 
-    trap_output = state.agent_outputs.get("value_trap_contradiction")
+    trap_output = state.output_for("value_trap_contradiction")
     challenges: list[RedTeamChallenge] = []
     if trap_output:
         for finding in trap_output.findings:

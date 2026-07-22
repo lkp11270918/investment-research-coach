@@ -873,7 +873,7 @@ def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClien
 
     prior_outputs = {
         key: value.model_dump(mode="json")
-        for key, value in state.agent_outputs.items()
+        for key, value in (state.skill_outputs or state.agent_outputs).items()
         if key in {"financial_quality_dividend", "business_model_moat"}
     }
     sell_side_documents = [
@@ -958,7 +958,7 @@ def run_value_trap_contradiction_llm(state: WorkflowState, client: OpenAIClient 
 
     prior_outputs = {
         key: value.model_dump(mode="json")
-        for key, value in state.agent_outputs.items()
+        for key, value in (state.skill_outputs or state.agent_outputs).items()
         if key
         in {
             "financial_quality_dividend",
@@ -1092,7 +1092,7 @@ def run_research_coach_review_llm(
                 ],
                 "prior_agent_outputs": {
                     key: value.model_dump(mode="json")
-                    for key, value in state.agent_outputs.items()
+                    for key, value in (state.skill_outputs or state.agent_outputs).items()
                     if key in {"firm_doctrine_case_retrieval", "material_organizer", "evidence_extractor"}
                 },
                 "mandatory_review_dimensions": [
@@ -1203,7 +1203,7 @@ def run_compliance_gate_llm(
                 ],
                 "agent_outputs": {
                     key: value.model_dump(mode="json")
-                    for key, value in state.agent_outputs.items()
+                    for key, value in (state.skill_outputs or state.agent_outputs).items()
                 },
                 "draft_memo": draft_memo.model_dump(mode="json") if draft_memo else None,
             },
@@ -1308,7 +1308,7 @@ def run_research_memo_generator_llm(state: WorkflowState, client: OpenAIClient |
                 ],
                 "agent_outputs": {
                     key: value.model_dump(mode="json")
-                    for key, value in state.agent_outputs.items()
+                    for key, value in (state.skill_outputs or state.agent_outputs).items()
                 },
                 "pre_memo_gate": state.pre_memo_gate.model_dump(mode="json") if state.pre_memo_gate else None,
             },

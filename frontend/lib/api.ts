@@ -96,6 +96,9 @@ export type AnalyzeResult = {
     evidence_items?: BackendEvidenceItem[]
     workflow_status?: string
     agent_outputs: Record<string, BackendAgentOutput>
+    skill_outputs?: Record<string, BackendAgentOutput>
+    research_plan?: {company_type:string;required_skills:string[];skipped_skills:string[];priority_questions:string[];missing_materials:string[]}|null
+    workflow_events?: Array<{stage:string;status:string;detail:string;attempt:number}>
   }
 }
 
@@ -212,8 +215,11 @@ export type EvidenceGraph = {
   removed_node_ids: string[]
   updated_at: string
 }
-export type ResearchQuality = { valuation_analysis: {status?:string; multiples?:Record<string,number>; scenarios?:Array<{name:string;estimated_value_per_share?:number|null;margin_of_safety_percent?:number|null}>; conclusion?:string}; financial_anomalies:Array<{anomaly_id:string;description:string;verification_question:string}>; evidence_graph_quality:{score?:number;traceability_rate?:number;verified_rate?:number;relation_coverage?:number;issues?:string[]} }
+export type ValuationAssumptions = {project_id?:string|null;method:string;cash_flow_type:string;forecast_years:number;bear_growth:number;base_growth:number;bull_growth:number;wacc:number;cost_of_equity:number;terminal_growth:number;margin_of_safety_required:number;confirmed:boolean;confirmation_note?:string|null}
+export type ValuationAnalysis = {status:string;method?:string|null;method_reason?:string|null;assumptions_confirmed:boolean;formal_conclusion_allowed:boolean;market_price?:number|null;required_margin_percent:number;multiples:Record<string,number>;historical_ranges:Record<string,Record<string,number>>;peer_ranges:Record<string,Record<string,number>>;equity_bridge:Record<string,number>;reverse_assumptions:string[];scenarios:Array<{name:string;method:string;assumptions:Record<string,number>;enterprise_value?:number|null;equity_value?:number|null;estimated_value_per_share?:number|null;margin_of_safety_percent?:number|null;meets_required_margin?:boolean|null}>;sensitivity:Array<{growth_rate:number;discount_rate:number;value_per_share?:number|null}>;missing_inputs:string[];warnings:string[];conclusion:string}
+export type ResearchQuality = { valuation_analysis:ValuationAnalysis; valuation_assumptions?:ValuationAssumptions; financial_anomalies:Array<{anomaly_id:string;description:string;verification_question:string}>; evidence_graph_quality:{score?:number;traceability_rate?:number;verified_rate?:number;relation_coverage?:number;issues?:string[]} }
 export async function fetchResearchQuality(projectId:string):Promise<ResearchQuality>{ const response=await fetch(`${API_BASE_URL}/api/projects/${projectId}/research-quality`,{headers:authHeaders()}); if(!response.ok) throw new Error(await parseError(response)); return response.json() }
+export async function updateValuationAssumptions(projectId:string,assumptions:ValuationAssumptions):Promise<ValuationAnalysis>{const response=await fetch(`${API_BASE_URL}/api/projects/${projectId}/valuation-assumptions`,{method:'PUT',headers:authHeaders(true),body:JSON.stringify(assumptions)});if(!response.ok)throw new Error(await parseError(response));return response.json()}
 
 export type ResearchQuestion = {
   question_id: string

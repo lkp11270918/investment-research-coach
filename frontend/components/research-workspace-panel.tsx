@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { ValuationPanel } from '@/components/valuation-panel'
 import {
   answerDefense,
   fetchDefenseSessions,
@@ -323,6 +324,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
           </TabsContent>
 
           <TabsContent value="evidence">
+            {quality && <ValuationPanel projectId={selectedProjectId} quality={quality} onUpdated={setQuality} />}
             {quality && <div className="mb-4 grid grid-cols-3 gap-4"><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">证据图谱质量</div><div className="mt-1 font-mono text-xl text-primary">{quality.evidence_graph_quality.score ?? 0}</div><div className="mt-2 text-[10px] text-muted-foreground">可追溯 {quality.evidence_graph_quality.traceability_rate ?? 0}% · 已确认 {quality.evidence_graph_quality.verified_rate ?? 0}% · 关系覆盖 {quality.evidence_graph_quality.relation_coverage ?? 0}%</div>{quality.evidence_graph_quality.issues?.map(item=><div key={item} className="mt-1 text-[10px] text-warning">{item}</div>)}</div><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">估值与安全边际</div><div className="mt-2 text-xs text-foreground">{quality.valuation_analysis.conclusion || '资料不足'}</div><div className="mt-2 flex gap-2">{Object.entries(quality.valuation_analysis.multiples || {}).map(([key,value])=><Badge key={key} className="border-border bg-secondary text-muted-foreground">{key.toUpperCase()} {value}</Badge>)}</div>{quality.valuation_analysis.scenarios?.map(item=><div key={item.name} className="mt-1 text-[10px] text-muted-foreground">{item.name}：{item.estimated_value_per_share ?? '-'} · 安全边际 {item.margin_of_safety_percent ?? '-'}%</div>)}</div><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">财务异常</div><div className="mt-1 font-mono text-xl text-warning">{quality.financial_anomalies.length}</div>{quality.financial_anomalies.slice(0,4).map(item=><div key={item.anomaly_id} className="mt-2 text-[10px] text-muted-foreground"><span className="text-warning">{item.description}</span><div>{item.verification_question}</div></div>)}</div></div>}
             <div className="mb-5 rounded-lg border border-border bg-card p-4">
               <div className="mb-3 flex items-center justify-between"><div><div className="text-sm font-semibold text-foreground">项目资料库</div><div className="mt-1 text-[10px] text-muted-foreground">证据图谱 v{graph?.version || 1} · {graphHistoryCount} 个历史版本</div></div><span className="font-mono text-xs text-muted-foreground">{materials.length} 份</span></div>

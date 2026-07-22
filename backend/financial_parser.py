@@ -18,6 +18,8 @@ FINANCIAL_METRICS: tuple[FinancialMetricSpec, ...] = (
     FinancialMetricSpec("revenue", ("营收", "营业收入", "收入合计", "revenue", "sales"), "元"),
     FinancialMetricSpec("net_profit", ("净利润", "归母净利润", "母公司股东的净利润", "net profit"), "元"),
     FinancialMetricSpec("operating_cash_flow", ("经营现金流", "经营活动现金流", "经营活动产生的现金流量净额", "cfo"), "元"),
+    FinancialMetricSpec("free_cash_flow_to_firm", ("企业自由现金流", "fcff", "free cash flow to firm"), "元"),
+    FinancialMetricSpec("free_cash_flow_to_equity", ("股权自由现金流", "fcfe", "free cash flow to equity"), "元"),
     FinancialMetricSpec("free_cash_flow", ("自由现金流", "fcf", "free cash flow"), "元"),
     FinancialMetricSpec("dividend_per_share", ("每股股利", "每股分红", "dividend per share"), "元/股"),
     FinancialMetricSpec("dividend", ("现金分红", "分红总额", "股利总额", "dividend"), "元"),
@@ -38,6 +40,15 @@ FINANCIAL_METRICS: tuple[FinancialMetricSpec, ...] = (
     FinancialMetricSpec("shares_outstanding", ("总股本", "期末股份总数", "已发行股份", "shares outstanding"), "股"),
     FinancialMetricSpec("gross_profit", ("毛利润", "毛利", "gross profit"), "元"),
     FinancialMetricSpec("selling_expense", ("销售费用", "selling expense"), "元"),
+    FinancialMetricSpec("cash_and_equivalents", ("货币资金", "现金及现金等价物", "cash and equivalents"), "元"),
+    FinancialMetricSpec("minority_interest", ("少数股东权益", "少数股东损益", "minority interest"), "元"),
+    FinancialMetricSpec("non_operating_assets", ("非经营性资产", "长期股权投资", "non-operating assets"), "元"),
+    FinancialMetricSpec("ebitda", ("息税折旧摊销前利润", "ebitda"), "元"),
+    FinancialMetricSpec("peer_pe", ("可比公司pe", "同业pe", "peer pe"), "倍"),
+    FinancialMetricSpec("peer_pb", ("可比公司pb", "同业pb", "peer pb"), "倍"),
+    FinancialMetricSpec("peer_ev_ebitda", ("可比公司ev/ebitda", "同业ev/ebitda", "peer ev/ebitda"), "倍"),
+    FinancialMetricSpec("historical_pe", ("历史pe", "历史市盈率", "historical pe"), "倍"),
+    FinancialMetricSpec("historical_pb", ("历史pb", "历史市净率", "historical pb"), "倍"),
 )
 
 

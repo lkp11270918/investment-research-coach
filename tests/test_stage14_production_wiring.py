@@ -25,10 +25,10 @@ class ProductionWiringTest(unittest.TestCase):
         self.assertEqual(edges[0].relation_source,"nli_model")
 
     def test_real_parser_inputs_can_reach_three_scenario_valuation(self):
-        doc=SourceDocument(title="估值表",source_type=SourceType.FINANCIAL_TABLE,content="指标 | 2025年\n股价 | 10\n每股收益 | 1\n自由现金流 | 100亿元\n总股本 | 10亿股")
+        doc=SourceDocument(title="估值表",source_type=SourceType.FINANCIAL_TABLE,content="指标 | 2025年\n股价 | 10\n每股收益 | 1\n企业自由现金流 | 100亿元\n总股本 | 10亿股\n有息负债 | 20亿元\n货币资金 | 5亿元")
         evidence=extract_structured_financial_evidence([doc])
         result=analyze_valuation(evidence)
-        self.assertEqual(result.status,"completed")
+        self.assertEqual(result.status,"draft")
         self.assertEqual(len(result.scenarios),3)
 
     def test_multimodal_check_matches_metric_period_unit_not_number_only(self):

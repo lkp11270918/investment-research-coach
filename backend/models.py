@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -83,17 +83,52 @@ class FinancialAnomaly(BaseModel):
 
 class ValuationScenarioResult(BaseModel):
     name: str
+    method: str = ""
     assumptions: dict[str, float] = Field(default_factory=dict)
+    enterprise_value: float | None = None
+    equity_value: float | None = None
     estimated_value_per_share: float | None = None
     margin_of_safety_percent: float | None = None
+    meets_required_margin: bool | None = None
+
+class ValuationSensitivityPoint(BaseModel):
+    growth_rate: float
+    discount_rate: float
+    value_per_share: float | None = None
+
+class ValuationAssumptions(BaseModel):
+    project_id: str | None = None
+    method: Literal["auto", "fcff", "fcfe", "ddm", "relative"] = "auto"
+    cash_flow_type: Literal["auto", "fcff", "fcfe"] = "auto"
+    forecast_years: int = Field(default=5, ge=3, le=10)
+    bear_growth: float = -0.05
+    base_growth: float = 0.03
+    bull_growth: float = 0.08
+    wacc: float = Field(default=0.10, gt=0, lt=0.5)
+    cost_of_equity: float = Field(default=0.11, gt=0, lt=0.5)
+    terminal_growth: float = Field(default=0.02, ge=-0.1, lt=0.2)
+    margin_of_safety_required: float = Field(default=0.25, ge=0, lt=1)
+    confirmed: bool = False
+    confirmation_note: str | None = None
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ValuationAnalysis(BaseModel):
     status: str = "insufficient_data"
+    method: str | None = None
+    method_reason: str | None = None
+    assumptions_confirmed: bool = False
+    formal_conclusion_allowed: bool = False
     market_price: float | None = None
+    required_margin_percent: float = 25.0
     multiples: dict[str, float] = Field(default_factory=dict)
+    historical_ranges: dict[str, dict[str, float]] = Field(default_factory=dict)
+    peer_ranges: dict[str, dict[str, float]] = Field(default_factory=dict)
+    equity_bridge: dict[str, float] = Field(default_factory=dict)
     reverse_assumptions: list[str] = Field(default_factory=list)
     scenarios: list[ValuationScenarioResult] = Field(default_factory=list)
+    sensitivity: list[ValuationSensitivityPoint] = Field(default_factory=list)
     missing_inputs: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     conclusion: str = "资料不足，不能形成安全边际判断"
 
@@ -216,6 +251,25 @@ class ResearchMap(BaseModel):
     change_summary: str | None = None
     completion_rate: float = 0
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ResearchExecutionPlan(BaseModel):
+    company_type: str = "general"
+    required_skills: list[str] = Field(default_factory=list)
+    skipped_skills: list[str] = Field(default_factory=list)
+    parallel_groups: list[list[str]] = Field(default_factory=list)
+    priority_questions: list[str] = Field(default_factory=list)
+    missing_materials: list[str] = Field(default_factory=list)
+    replan_triggers: list[str] = Field(default_factory=list)
+    rationale: str = ""
+
+
+class WorkflowEvent(BaseModel):
+    stage: str
+    status: str
+    detail: str = ""
+    attempt: int = 1
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ThesisVariable(BaseModel):
@@ -679,6 +733,9 @@ class WorkflowState(BaseModel):
     evidence_items: list[EvidenceItem] = Field(default_factory=list)
     evidence_graph: EvidenceGraph = Field(default_factory=EvidenceGraph)
     agent_outputs: dict[str, AgentOutput] = Field(default_factory=dict)
+    skill_outputs: dict[str, AgentOutput] = Field(default_factory=dict)
+    research_plan: ResearchExecutionPlan | None = None
+    workflow_events: list[WorkflowEvent] = Field(default_factory=list)
     processing_records: list[ModelExecutionRecord] = Field(default_factory=list)
     model_usage: list[ModelUsageRecord] = Field(default_factory=list)
     financial_calculations: list[FinancialCalculationRecord] = Field(default_factory=list)
@@ -695,6 +752,10 @@ class WorkflowState(BaseModel):
     def evidence_by_category(self, *categories: EvidenceCategory) -> list[EvidenceItem]:
         allowed = set(categories)
         return [item for item in self.evidence_items if item.category in allowed]
+
+    def output_for(self, key: str) -> AgentOutput | None:
+        """Read new Skill output first and transparently support historical runs."""
+        return self.skill_outputs.get(key) or self.agent_outputs.get(key)
 
 
 class AnalyzeResponse(BaseModel):

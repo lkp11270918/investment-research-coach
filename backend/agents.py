@@ -352,18 +352,19 @@ def run_compliance_gate(state: WorkflowState, gate_name: str, draft_memo: Resear
     if state.evidence_graph.conflicts:
         evidence_issues.extend(f"跨来源数据冲突：{item}" for item in state.evidence_graph.conflicts)
 
-    for key, output in state.agent_outputs.items():
+    review_outputs = state.skill_outputs or state.agent_outputs
+    for key, output in review_outputs.items():
         for finding in output.findings:
             if finding.classification in {"fact_based", "unsupported_claim"} and not finding.evidence_ids:
                 unsupported.append(f"{key}：{finding.title} - {finding.detail}")
 
-    trap_output = state.agent_outputs.get("value_trap_contradiction")
+    trap_output = state.output_for("value_trap_contradiction")
     if not trap_output or not trap_output.findings:
         evidence_issues.append("价值陷阱与反证检查未完成，不能进入 Memo。")
     if state.research_judgment.unresolved_critical_count:
         evidence_issues.append(f"仍有 {state.research_judgment.unresolved_critical_count} 个关键反证缺少证据，不能进入正式 Memo。")
 
-    support_ids = {evidence_id for output in state.agent_outputs.values() for finding in output.findings for evidence_id in finding.evidence_ids}
+    support_ids = {evidence_id for output in review_outputs.values() for finding in output.findings for evidence_id in finding.evidence_ids}
     if support_ids:
         categories = {item.category for item in state.evidence_items if item.evidence_id in support_ids}
         if categories and categories.issubset({EvidenceCategory.SELL_SIDE_OPINION, EvidenceCategory.MANAGEMENT_OPINION, EvidenceCategory.NEWS_OR_MARKET_OPINION}):
@@ -382,7 +383,7 @@ def run_compliance_gate(state: WorkflowState, gate_name: str, draft_memo: Resear
             if unknown_ids:
                 evidence_issues.append(f"Memo章节《{section.title}》引用不存在的证据：{', '.join(unknown_ids)}")
 
-    if any(output.status == AgentStatus.FAIL for output in state.agent_outputs.values()):
+    if any(output.status == AgentStatus.FAIL for output in review_outputs.values()):
         downgraded.append(
             DowngradedClaim(
                 original_claim="生成高置信研究观点",
@@ -405,7 +406,7 @@ def run_compliance_gate(state: WorkflowState, gate_name: str, draft_memo: Resear
 
 def run_research_memo_generator(state: WorkflowState) -> ResearchMemo:
     source_ids = [doc.source_id for doc in state.source_documents]
-    outputs = state.agent_outputs
+    outputs = state.skill_outputs or state.agent_outputs
 
     def body_for(key: str, fallback: str) -> str:
         output = outputs.get(key)

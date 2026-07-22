@@ -38,6 +38,7 @@ from .models import (
     ResearchTaskUpdate,
     VerificationStatus,
     ResearchMap,
+    ValuationAssumptions,
 )
 
 
@@ -178,6 +179,7 @@ def _init_postgres_projects(conn: Any) -> None:
     conn.execute("CREATE TABLE IF NOT EXISTS research_behavior_events (event_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, project_id TEXT, action TEXT NOT NULL, dimension TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_behavior_user_created ON research_behavior_events(user_id, created_at ASC)")
     conn.execute("CREATE TABLE IF NOT EXISTS research_map_versions (project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, fingerprint TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id,version))")
+    conn.execute("CREATE TABLE IF NOT EXISTS project_valuation_assumptions (project_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL)")
 
 
 def _init_sqlite_projects(conn: sqlite3.Connection) -> None:
@@ -210,6 +212,28 @@ def _init_sqlite_projects(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE TABLE IF NOT EXISTS research_behavior_events (event_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, project_id TEXT, action TEXT NOT NULL, dimension TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_behavior_user_created ON research_behavior_events(user_id, created_at ASC)")
     conn.execute("CREATE TABLE IF NOT EXISTS research_map_versions (project_id TEXT NOT NULL, user_id TEXT NOT NULL, version INTEGER NOT NULL, fingerprint TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,version))")
+    conn.execute("CREATE TABLE IF NOT EXISTS project_valuation_assumptions (project_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)")
+
+def get_valuation_assumptions(user_id: str, project_id: str) -> ValuationAssumptions:
+    database_url=get_settings().database_url
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: row=conn.execute("SELECT payload FROM project_valuation_assumptions WHERE user_id=%s AND project_id=%s",(user_id,project_id)).fetchone()
+    else:
+        with _sqlite_connection(database_url) as conn: row=conn.execute("SELECT payload FROM project_valuation_assumptions WHERE user_id=? AND project_id=?",(user_id,project_id)).fetchone()
+    if not row: return ValuationAssumptions(project_id=project_id)
+    return ValuationAssumptions.model_validate(json.loads(row[0]) if isinstance(row[0],str) else row[0])
+
+def save_valuation_assumptions(user_id: str, project_id: str, assumptions: ValuationAssumptions) -> ValuationAssumptions:
+    if not project_belongs_to_user(user_id, project_id):
+        raise ValueError("project not found")
+    assumptions.project_id=project_id; assumptions.updated_at=_now(); payload=json.dumps(assumptions.model_dump(mode="json"),ensure_ascii=False); database_url=get_settings().database_url
+    if _is_postgres_url(database_url):
+        import psycopg
+        with psycopg.connect(database_url) as conn: conn.execute("INSERT INTO project_valuation_assumptions(project_id,user_id,payload,updated_at) VALUES(%s,%s,%s::jsonb,%s) ON CONFLICT(project_id) DO UPDATE SET payload=EXCLUDED.payload,updated_at=EXCLUDED.updated_at",(project_id,user_id,payload,assumptions.updated_at))
+    else:
+        with _sqlite_connection(database_url) as conn: conn.execute("INSERT INTO project_valuation_assumptions(project_id,user_id,payload,updated_at) VALUES(?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(project_id,user_id,payload,assumptions.updated_at.isoformat()))
+    return assumptions
 
 
 def list_research_map_versions(user_id: str, project_id: str) -> list[ResearchMap]:
@@ -780,10 +804,18 @@ def list_memo_versions(user_id: str, project_id: str) -> list[MemoVersion]:
 
 def save_memo_version(user_id: str, project_id: str, request: MemoVersionCreate) -> MemoVersion:
     from .memo_coauthor import assess_memo_sections
+    from .valuation import analyze_valuation
     if not project_belongs_to_user(user_id, project_id):
         raise ValueError("project not found")
     graph = get_project_evidence_graph(user_id, project_id) or EvidenceGraph()
     gate_status, issues = assess_memo_sections(request.sections, graph, request.request_formal)
+    if request.request_formal and any(section.section_id == "valuation_margin" for section in request.sections):
+        project=get_research_project(user_id,project_id); assumptions=get_valuation_assumptions(user_id,project_id)
+        latest=get_user_run(user_id,project.timeline[-1].run_id) if project and project.timeline else None
+        valuation=analyze_valuation(latest.state.evidence_items,project.project.company_profile.industry,assumptions) if latest and project else None
+        if not valuation or not valuation.formal_conclusion_allowed:
+            issues.append("估值与安全边际：现金流口径、股权价值桥接或用户估值假设尚未完成确认")
+            gate_status="needs_evidence"
     history = list_memo_versions(user_id, project_id)
     version = MemoVersion(project_id=project_id, version=len(history) + 1, sections=request.sections, created_by="user", change_summary=request.change_summary, gate_status=gate_status, gate_issues=issues, evidence_graph_version=graph.version)
     _persist_memo_version(user_id, version)

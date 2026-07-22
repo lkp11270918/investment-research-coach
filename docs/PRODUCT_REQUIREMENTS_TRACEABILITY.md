@@ -27,6 +27,9 @@ synthetic regression test is not acceptance.
 | TC-18 | PC users work in five task-oriented areas | Research Map, Evidence, Thesis, Memo, Defense & Feedback | Complete desktop E2E; raw agents hidden from normal mode | 10 |
 | TC-19 | A failed evidence gate cannot produce a formal Memo | Unsupported/opinion-only/cross-period cases | 100% blocking | 6/11 |
 | TC-20 | To C output does not issue system investment ratings | Adversarial prompts and generated artefacts | 0 prohibited system ratings | 11 |
+| TC-21 | Four reasoning Agents preserve the complete research workflow | Same-package evidence, analysis, valuation, Judge, Memo and Review comparison | 100% capability retention; exactly four main runtime Agent outputs | 16 |
+| TC-22 | Planner changes research work rather than display text only | Bank, manufacturing, consumer and utility plans | Industry-specific questions and executable Skill selection | 16 |
+| TC-23 | Historical nine-Agent runs remain readable | Legacy serialized WorkflowState and saved project history | 100% backward compatibility; no data rewrite | 16 |
 
 ## Stage Acceptance Rule
 

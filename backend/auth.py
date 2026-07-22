@@ -168,7 +168,7 @@ def init_auth_db() -> None:
 
 def delete_user_account(user_id: str) -> None:
     database_url = get_settings().database_url
-    tables = ("research_behavior_events", "capability_profiles", "defense_sessions", "memo_versions", "research_tasks", "thesis_versions", "research_map_versions", "evidence_graph_versions", "project_materials", "project_evidence_graphs", "research_runs", "research_projects", "users")
+    tables = ("research_behavior_events", "capability_profiles", "defense_sessions", "memo_versions", "research_tasks", "thesis_versions", "research_map_versions", "project_valuation_assumptions", "evidence_graph_versions", "project_materials", "project_evidence_graphs", "research_runs", "research_projects", "users")
     if _is_postgres_url(database_url):
         import psycopg
         with psycopg.connect(database_url) as conn:
