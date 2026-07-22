@@ -125,7 +125,7 @@ class OpenAIClient:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise LLMError(f"OpenAI API HTTP {exc.code}: {detail}") from exc
-        except urllib.error.URLError as exc:
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise LLMError(f"OpenAI API request failed: {exc}") from exc
 
         text = _extract_text(payload)
@@ -153,7 +153,7 @@ class OpenAIClient:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise LLMError(f"Embedding API HTTP {exc.code}: {detail}") from exc
-        except (urllib.error.URLError, json.JSONDecodeError) as exc:
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise LLMError(f"Embedding API request failed: {exc}") from exc
         rows = sorted(payload.get("data", []), key=lambda item: int(item.get("index", 0)))
         vectors = [item.get("embedding", []) for item in rows]

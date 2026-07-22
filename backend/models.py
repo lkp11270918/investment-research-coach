@@ -262,6 +262,46 @@ class ResearchExecutionPlan(BaseModel):
     missing_materials: list[str] = Field(default_factory=list)
     replan_triggers: list[str] = Field(default_factory=list)
     rationale: str = ""
+    minimum_evidence: dict[str, int] = Field(default_factory=dict)
+    dependencies: dict[str, list[str]] = Field(default_factory=dict)
+    planner_model: str = "deterministic_fallback"
+
+
+class SkillResult(BaseModel):
+    skill_id: str
+    status: Literal["pass", "partial", "fail", "skipped"] = "partial"
+    inputs_fingerprint: str = ""
+    findings: list[AgentFinding] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    missing_inputs: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    calculation_record_ids: list[str] = Field(default_factory=list)
+    duration_ms: int = 0
+    model_usage: list[ModelUsageRecord] = Field(default_factory=list)
+    failure_code: str | None = None
+    attempt: int = 1
+
+
+class ResearchClaim(BaseModel):
+    claim_id: str = Field(default_factory=lambda: f"CLM-{uuid4().hex[:10]}")
+    topic: str
+    statement: str
+    claim_type: Literal["fact", "opinion", "assumption", "reasoning", "risk"] = "reasoning"
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    counter_evidence_ids: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    scenarios: list[str] = Field(default_factory=list)
+    confidence: Confidence = Confidence.LOW
+    falsification_conditions: list[str] = Field(default_factory=list)
+    source_skill_ids: list[str] = Field(default_factory=list)
+
+
+class JudgeDecision(BaseModel):
+    claim_id: str
+    decision: Literal["approved", "downgraded", "rejected", "needs_evidence", "needs_recalculation"]
+    reason: str
+    approved_statement: str | None = None
+    missing_evidence: list[str] = Field(default_factory=list)
 
 
 class WorkflowEvent(BaseModel):
@@ -715,6 +755,10 @@ class AnalyzeRequest(BaseModel):
     project_id: str | None = None
     company_profile: CompanyProfile
     materials: list[RawMaterial] = Field(default_factory=list)
+    research_objective: str | None = None
+    investment_horizon: str | None = None
+    initial_view: str | None = None
+    key_question: str | None = None
     options: WorkflowOptions = Field(default_factory=WorkflowOptions)
 
 
@@ -733,8 +777,10 @@ class WorkflowState(BaseModel):
     evidence_items: list[EvidenceItem] = Field(default_factory=list)
     evidence_graph: EvidenceGraph = Field(default_factory=EvidenceGraph)
     agent_outputs: dict[str, AgentOutput] = Field(default_factory=dict)
-    skill_outputs: dict[str, AgentOutput] = Field(default_factory=dict)
+    skill_outputs: dict[str, SkillResult | AgentOutput] = Field(default_factory=dict)
     research_plan: ResearchExecutionPlan | None = None
+    research_claims: list[ResearchClaim] = Field(default_factory=list)
+    judge_decisions: list[JudgeDecision] = Field(default_factory=list)
     workflow_events: list[WorkflowEvent] = Field(default_factory=list)
     processing_records: list[ModelExecutionRecord] = Field(default_factory=list)
     model_usage: list[ModelUsageRecord] = Field(default_factory=list)
@@ -755,7 +801,12 @@ class WorkflowState(BaseModel):
 
     def output_for(self, key: str) -> AgentOutput | None:
         """Read new Skill output first and transparently support historical runs."""
-        return self.skill_outputs.get(key) or self.agent_outputs.get(key)
+        output = self.skill_outputs.get(key) or self.agent_outputs.get(key)
+        if isinstance(output, AgentOutput):
+            return output
+        if isinstance(output, SkillResult):
+            return AgentOutput(agent_name=f"{output.skill_id} Skill", status=AgentStatus(output.status if output.status in {"pass", "partial", "fail"} else "partial"), summary="；".join(item.detail for item in output.findings[:2]) or output.skill_id, findings=output.findings, missing_materials=output.missing_inputs, warnings=output.warnings, confidence=Confidence.MEDIUM if output.findings else Confidence.LOW)
+        return None
 
 
 class AnalyzeResponse(BaseModel):

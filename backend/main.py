@@ -128,16 +128,19 @@ async def analyze_files(
     project_id: str | None = Form(None),
     options: str | None = Form(None),
     text_materials: str | None = Form(None),
+    research_context: str | None = Form(None),
     material_ids: list[str] = Form(default=[]),
     files: list[UploadFile] = File(default=[]),
     current_user: AuthUser | None = Depends(get_optional_current_user),
 ) -> AnalyzeResponse:
     try:
+        context_payload = json.loads(research_context) if research_context else {}
         payload = {
             "project_id": project_id,
             "company_profile": json.loads(company_profile),
             "materials": json.loads(text_materials) if text_materials else [],
             "options": json.loads(options) if options else {},
+            **context_payload,
         }
         request = AnalyzeRequest.model_validate(payload)
     except Exception as exc:

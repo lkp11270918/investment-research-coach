@@ -51,7 +51,7 @@ def run_firm_doctrine_case_retrieval(state: WorkflowState) -> AgentOutput:
         missing_materials = ["机构投资理念文档", "历史优秀 Memo", "失败案例库", "内部评级规则"]
 
     return AgentOutput(
-        agent_name="Firm Doctrine & Case Retrieval Agent",
+        agent_name="Doctrine & Case Context Skill",
         status=AgentStatus.PARTIAL,
         summary=summary,
         findings=[
@@ -103,7 +103,7 @@ def run_material_organizer(state: WorkflowState) -> AgentOutput:
             missing.append(label)
 
     return AgentOutput(
-        agent_name="Material Organizer Agent",
+        agent_name="Material Organization Skill",
         status=AgentStatus.PASS if documents else AgentStatus.FAIL,
         summary=f"已整理 {len(documents)} 份用户资料。" if documents else "未收到可分析资料。",
         findings=[
@@ -172,7 +172,7 @@ def run_evidence_extractor(state: WorkflowState) -> AgentOutput:
             missing.append(f"财务字段：{metric_name}")
 
     return AgentOutput(
-        agent_name="Evidence Extractor Agent",
+        agent_name="Evidence Extraction Skill",
         status=AgentStatus.PASS if evidence else AgentStatus.FAIL,
         summary=f"抽取 {len(evidence)} 条初始证据项，其中结构化财务字段 {len(extracted_metric_names)} 类。",
         findings=[
@@ -206,7 +206,7 @@ def run_financial_quality_dividend(state: WorkflowState) -> AgentOutput:
             missing.append(label)
 
     return AgentOutput(
-        agent_name="Financial Quality & Dividend Agent",
+        agent_name="Financial Quality & Dividend Skill",
         status=AgentStatus.PARTIAL if financial else AgentStatus.FAIL,
         summary="已基于当前财务证据进行保守的财务质量检查。" if financial else "缺少财务证据，无法判断现金流质量和分红可持续性。",
         findings=[
@@ -238,7 +238,7 @@ def run_business_model_moat(state: WorkflowState) -> AgentOutput:
         }
     ]
     return AgentOutput(
-        agent_name="Business Model & Moat Agent",
+        agent_name="Business Model & Moat Skill",
         status=AgentStatus.PARTIAL if usable else AgentStatus.FAIL,
         summary="已建立商业模式分析占位，后续需抽取收入来源、利润来源、周期性和竞争优势。",
         findings=[
@@ -272,7 +272,7 @@ def run_management_view_comparison(state: WorkflowState) -> AgentOutput:
         missing.append("可用于对照叙事的财务证据")
 
     return AgentOutput(
-        agent_name="Management & View Comparison Agent",
+        agent_name="Management & View Comparison Skill",
         status=AgentStatus.PARTIAL if evidence_ids else AgentStatus.FAIL,
         summary=(
             f"已检查管理层、卖方与财务现实对比所需资料；当前识别 {len(sell_side_documents)} 份卖方来源。"
@@ -312,7 +312,7 @@ def run_value_trap_contradiction(state: WorkflowState) -> AgentOutput:
         "管理层叙事是否与财务现实冲突",
     ]
     return AgentOutput(
-        agent_name="Value Trap & Contradiction Agent",
+        agent_name="Value Trap & Contradiction Skill",
         status=AgentStatus.PARTIAL if evidence_ids else AgentStatus.FAIL,
         summary="已生成强制价值陷阱检查清单；真实判断需依赖后续细粒度证据。",
         findings=[

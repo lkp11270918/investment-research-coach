@@ -56,7 +56,7 @@ MATERIAL_ORGANIZER_PROMPT = (
     GLOBAL_AGENT_RULES
     + """
 
-任务：你是 Material Organizer Agent。请根据用户提供资料，判断资料类型、覆盖范围、缺失资料和可靠性提示。
+    任务：你是 Evidence Agent 调用的 Material Organization Skill。请根据用户提供资料，判断资料类型、覆盖范围、缺失资料和可靠性提示。
 
 返回 JSON 格式：
 {
@@ -84,7 +84,7 @@ EVIDENCE_EXTRACTOR_PROMPT = (
     GLOBAL_AGENT_RULES
     + """
 
-任务：你是 Evidence Extractor Agent。请从用户材料中抽取价值投资研究所需的关键证据。
+    任务：你是 Evidence Agent 调用的 Evidence Extraction Skill。请从用户材料中抽取价值投资研究所需的关键证据。
 
 只抽取材料中明确出现的信息，不得根据常识补充。
 每条 evidence 必须引用一个已有 source_id，并尽量保留原文 excerpt。
@@ -130,7 +130,7 @@ FINANCIAL_QUALITY_PROMPT = (
     GLOBAL_AGENT_RULES
     + """
 
-任务：你是 Financial Quality & Dividend Agent。请只基于已抽取 evidence 分析财务质量、现金流质量、分红可持续性和资产负债表安全。
+    任务：你是 Research Analyst 调用的 Financial Quality & Dividend Skill。请只基于已抽取 evidence 分析财务质量、现金流质量、分红可持续性和资产负债表安全。
 
 特别要求：
 - 不得补造缺失财务数据。
@@ -165,7 +165,7 @@ BUSINESS_MODEL_PROMPT = (
     GLOBAL_AGENT_RULES
     + """
 
-任务：你是 Business Model & Moat Agent。请只基于已抽取 evidence 分析公司靠什么赚钱、商业模式稳定性、竞争优势、周期性、资本开支需求和能力圈匹配度。
+    任务：你是 Research Analyst 调用的 Business Model & Moat Skill。请只基于已抽取 evidence 分析公司靠什么赚钱、商业模式稳定性、竞争优势、周期性、资本开支需求和能力圈匹配度。
 
 特别要求：
 - 不得把管理层愿景、卖方乐观观点或行业标签直接当作护城河。
@@ -199,7 +199,7 @@ MANAGEMENT_VIEW_PROMPT = (
     GLOBAL_AGENT_RULES
     + """
 
-任务：你是 Management & View Comparison Agent。请比较管理层叙事、卖方观点、新闻/市场观点、用户观点和财务事实之间的一致性、分歧和待追问问题。
+    任务：你是 Research Analyst 调用的 Management & View Comparison Skill。请比较管理层叙事、卖方观点、新闻/市场观点、用户观点和财务事实之间的一致性、分歧和待追问问题。
 
 特别要求：
 - 管理层观点、卖方观点、新闻观点都只能作为观点输入，不得直接写成事实或买方结论。
@@ -249,7 +249,7 @@ VALUE_TRAP_PROMPT = (
     GLOBAL_AGENT_RULES
     + """
 
-任务：你是 Value Trap & Contradiction Agent。你的职责是主动寻找可能推翻当前价值投资判断的反证、价值陷阱信号和一票否决变量。
+    任务：你是 Red Team & Judge 调用的 Value Trap & Contradiction Skill。你的职责是主动寻找可能推翻当前价值投资判断的反证、价值陷阱信号和一票否决变量。
 
 你不是补充乐观结论的 Agent。你必须从怀疑视角检查：
 - 高股息是否不可持续。
@@ -296,7 +296,7 @@ RESEARCH_COACH_REVIEW_PROMPT = (
     GLOBAL_AGENT_RULES
     + """
 
-任务：你是 Research Coach Review Mode，一个买方价值投资研究训练批改 Agent。你不是重写用户 Memo，也不是给投资建议；你的任务是严厉批改用户 Memo 的研究质量。
+任务：你在 Red Team & Judge Agent 的 Research Coach Review Mode 中执行批改。你不是重写用户 Memo，也不是给投资建议；你的任务是严厉批改用户 Memo 的研究质量。
 
 你必须覆盖 PRD 中的四类核心批改：
 1. 卖方复读识别：检查用户是否把卖方观点、市场观点、管理层说法直接复述为自己的买方结论；是否缺少独立反证、关键假设拆解和证据校验。
@@ -340,7 +340,7 @@ COMPLIANCE_GATE_PROMPT = (
     GLOBAL_AGENT_RULES
     + """
 
-任务：你是 Evidence & Compliance Gate Agent。请检查当前工作流状态或最终 Memo 是否存在证据和合规风险。
+    任务：你是 Red Team & Judge 的 Evidence & Compliance Review Skill。请检查当前工作流状态或最终 Memo 是否存在证据和合规风险。
 
 你必须检查：
 - 财务数字是否有来源。
@@ -374,7 +374,7 @@ MEMO_GENERATOR_PROMPT = (
     GLOBAL_AGENT_RULES
     + """
 
-任务：你是 Research Memo Generator Agent。请基于当前工作流状态生成结构化买方研究训练 Memo。
+    任务：你是历史版本兼容的 Memo Formatting Skill。请基于当前工作流状态生成结构化买方研究训练 Memo。
 
 你必须遵守：
 - 只能基于用户资料、evidence 和前序 Agent 输出写作。
@@ -565,7 +565,7 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
 
     findings = [_finding(item) for item in result.get("findings", []) if isinstance(item, dict)]
     return AgentOutput(
-        agent_name="Material Organizer Agent",
+        agent_name="Material Organization Skill",
         status=AgentStatus.PASS if documents else AgentStatus.FAIL,
         summary=str(result.get("summary") or f"已整理 {len(documents)} 份用户资料。"),
         findings=findings,
@@ -669,7 +669,7 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
         if metric_name not in extracted_metric_names:
             missing_materials.append(f"财务字段：{metric_name}")
     return AgentOutput(
-        agent_name="Evidence Extractor Agent",
+        agent_name="Evidence Extraction Skill",
         status=AgentStatus.PASS if evidence else AgentStatus.FAIL,
         summary=str(result.get("summary") or f"抽取 {len(evidence)} 条证据项。")
         + (f" 结构化财务字段 {len(extracted_metric_names)} 类。" if structured_financial_evidence else ""),
@@ -759,7 +759,7 @@ def run_financial_quality_dividend_llm(state: WorkflowState, client: OpenAIClien
         confidence = Confidence.MEDIUM
 
     return AgentOutput(
-        agent_name="Financial Quality & Dividend Agent",
+        agent_name="Financial Quality & Dividend Skill",
         status=status,
         summary=str(result.get("summary") or "已完成财务质量与分红可持续性分析。"),
         findings=findings,
@@ -838,7 +838,7 @@ def run_business_model_moat_llm(state: WorkflowState, client: OpenAIClient | Non
         confidence = Confidence.MEDIUM
 
     return AgentOutput(
-        agent_name="Business Model & Moat Agent",
+        agent_name="Business Model & Moat Skill",
         status=status,
         summary=str(result.get("summary") or "已完成商业模式与竞争优势分析。"),
         findings=findings,
@@ -937,7 +937,7 @@ def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClien
         confidence = Confidence.MEDIUM
 
     return AgentOutput(
-        agent_name="Management & View Comparison Agent",
+        agent_name="Management & View Comparison Skill",
         status=status,
         summary=str(result.get("summary") or "已完成管理层与多方观点比较。"),
         findings=findings,
@@ -1033,7 +1033,7 @@ def run_value_trap_contradiction_llm(state: WorkflowState, client: OpenAIClient 
         warnings.append("价值陷阱检查不能被前序乐观结论覆盖。")
 
     return AgentOutput(
-        agent_name="Value Trap & Contradiction Agent",
+        agent_name="Value Trap & Contradiction Skill",
         status=status,
         summary=str(result.get("summary") or "已完成价值陷阱与反证风险检查。"),
         findings=findings,

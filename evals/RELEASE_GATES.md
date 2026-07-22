@@ -30,6 +30,10 @@ The final release gate requires:
 - new workflows publish exactly four main Agent outputs while preserving all
   evidence, analysis, valuation, Judge, Memo, Review, and history behavior;
 - historical nine-Agent runs remain readable without database rewrites.
+- Planner-selected industry Skills must match the company type in the actual
+  execution trace, not only in displayed research questions.
+- every Memo factual statement must originate from an approved JudgeDecision;
+  unapproved Analyst text must have zero path into Memo Writing.
 
 ## 2026-07-20 Engineering Acceptance Record
 

@@ -136,7 +136,7 @@ export function ReviewPanel() {
   const [apiError, setApiError] = useState<string | null>(null)
   const [selectedIssue, setSelectedIssue] = useState<string | null>(null)
 
-  const reviewOutput = (reviewResult?.state.skill_outputs?.research_coach_review || reviewResult?.state.agent_outputs.red_team_judge || reviewResult?.state.agent_outputs.research_coach_review) as BackendAgentOutput | undefined
+  const reviewOutput = (reviewResult?.state.agent_outputs.red_team_judge || reviewResult?.state.skill_outputs?.research_coach_review || reviewResult?.state.agent_outputs.research_coach_review) as BackendAgentOutput | undefined
   const doctrineOutput = (reviewResult?.state.agent_outputs.research_planner || reviewResult?.state.agent_outputs.firm_doctrine_case_retrieval) as BackendAgentOutput | undefined
 
   const groupedCounts = useMemo(() => {
@@ -155,7 +155,7 @@ export function ReviewPanel() {
     try {
       const result = await reviewMemo({ memoText })
       setReviewResult(result)
-      const firstFinding = (result.state.skill_outputs?.research_coach_review || result.state.agent_outputs.red_team_judge || result.state.agent_outputs.research_coach_review)?.findings?.[0]
+      const firstFinding = (result.state.agent_outputs.red_team_judge || result.state.skill_outputs?.research_coach_review || result.state.agent_outputs.research_coach_review)?.findings?.[0]
       setSelectedIssue(firstFinding ? `0-${firstFinding.title}` : null)
     } catch (error) {
       setApiError(error instanceof Error ? error.message : '批改请求失败')

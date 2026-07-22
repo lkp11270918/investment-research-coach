@@ -493,6 +493,7 @@ export async function analyzeCompany(input: {
   }
   formData.append('company_profile', JSON.stringify(companyProfile))
   formData.append('text_materials', JSON.stringify(textMaterials))
+  formData.append('research_context', JSON.stringify({ research_objective: input.researchObjective, investment_horizon: input.investmentHorizon, initial_view: input.initialView, key_question: input.keyQuestion }))
   formData.append('options', JSON.stringify({ skip_post_gate: false, enable_parallel: true }))
   for (const material of fileMaterials) {
     formData.append('material_ids', material.materialId)

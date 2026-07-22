@@ -18,6 +18,11 @@ The deterministic orchestrator owns ordering, parallel execution, stop states,
 retries, validation, persistence, and hard compliance gates. Memo generation is
 the `memo_writing` Skill and cannot run before Judge approval.
 
+Specialist modules return `SkillResult`, never `AgentRun`. The Analyst converts
+those results into evidence-linked `ResearchClaim` records. The Judge produces
+a `JudgeDecision` for every claim. Memo Writing receives only approved or
+downgraded claim text and cannot read unapproved Analyst prose.
+
 ## Skill migration
 
 | Historical Agent | New owner |
@@ -51,3 +56,16 @@ The migration passes only when the same research package still produces:
 Agent-key count alone is not acceptance. Industry-specific plans, missing-data
 skip behavior, the complete research lifecycle, TypeScript validation, and the
 production build must also pass.
+
+## 2026-07-22 acceptance record
+
+- real model: `gpt-4.1-mini` Planner completed and emitted an executable plan;
+- runtime Agent keys: planner, evidence, analyst, judge only;
+- manufacturing plan executed no bank, consumer, or utility Skill;
+- all specialist outputs serialized as `SkillResult`;
+- Analyst produced Research Claims and Judge produced one decision per Claim;
+- malformed Planner/Analyst JSON and network timeouts were observed in live
+  testing, fixed, and verified to degrade locally instead of aborting workflow;
+- live model calls reduced from 11 in the transitional implementation to 5;
+- 78 deterministic tests, TypeScript validation, synthetic evaluation, and the
+  Next.js production build passed.

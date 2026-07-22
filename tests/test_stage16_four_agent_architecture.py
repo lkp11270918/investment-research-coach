@@ -43,8 +43,8 @@ class FourAgentArchitectureTest(unittest.TestCase):
     def test_four_agents_preserve_all_user_facing_research_capabilities(self):
         result = run_analysis_workflow(AnalyzeRequest(company_profile=CompanyProfile(company_name="测试制造", industry="制造业"), materials=self.materials()))
         self.assertEqual(tuple(result.agent_outputs), MAIN_AGENT_KEYS)
-        self.assertEqual(set(result.research_plan.required_skills), {"financial_quality_dividend", "business_model_moat", "management_view_comparison", "valuation_margin"})
-        required_outputs = {"material_organizer", "evidence_extractor", "financial_quality_dividend", "business_model_moat", "management_view_comparison", "valuation_margin", "value_trap_contradiction", "pre_memo_gate"}
+        self.assertEqual(set(result.research_plan.required_skills), {"financial_quality_dividend", "manufacturing_analysis", "management_view_comparison", "valuation_margin"})
+        required_outputs = {"material_organization", "evidence_extraction", "financial_quality_dividend", "manufacturing_analysis", "management_view_comparison", "valuation_margin", "value_trap_contradiction"}
         self.assertTrue(required_outputs.issubset(result.skill_outputs))
         self.assertTrue(result.source_documents)
         self.assertTrue(result.evidence_items)
