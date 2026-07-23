@@ -38,9 +38,34 @@ def assess_graph_quality(graph: EvidenceGraph) -> EvidenceGraphQuality:
     verified=sum(n.verification_status==VerificationStatus.VERIFIED for n in evidence)/max(len(evidence),1)*100
     related={e.from_node_id for e in graph.edges}|{e.to_node_id for e in graph.edges}
     coverage=sum(n.node_id in related for n in evidence)/max(len(evidence),1)*100
+    claims=[n for n in graph.nodes if n.node_type=="analysis_claim"]
+    red_team=[n for n in graph.nodes if n.node_type=="red_team_challenge"]
+    judges=[n for n in graph.nodes if n.node_type=="judge_finding"]
+    reviews=[n for n in graph.nodes if n.node_type=="review_finding"]
+    supported_claims={e.to_node_id for e in graph.edges if e.relation.value=="supports" and e.to_node_id.startswith("CLAIM:")}
+    challenged={e.from_node_id for e in graph.edges if e.relation.value=="challenges"}
+    judged={e.from_node_id for e in graph.edges if e.relation.value in {"validated_by","rejected_by"}}
+    bound_reviews={e.to_node_id for e in graph.edges if e.relation.value=="supports" and e.to_node_id.startswith("REVIEW:")}
+    claim_support=len(supported_claims)/max(len(claims),1)*100
+    red_team_coverage=len(challenged)/max(len(red_team),1)*100
+    judge_coverage=len(judged)/max(len(claims),1)*100
+    review_coverage=len(bound_reviews)/max(len(reviews),1)*100
+    isolated=sum(n.node_id not in related for n in graph.nodes)/max(len(graph.nodes),1)*100
     issues=[]
     if trace<100: issues.append("部分证据缺少可追溯来源")
     if verified<70: issues.append("已确认事实比例不足70%")
     if coverage<70: issues.append("部分证据尚未建立支持、反证或依赖关系")
     if graph.conflicts: issues.append(f"仍有{len(graph.conflicts)}项未解决冲突")
-    return EvidenceGraphQuality(score=round(trace*.35+verified*.35+coverage*.3,1),traceability_rate=round(trace,1),verified_rate=round(verified,1),relation_coverage=round(coverage,1),unresolved_conflicts=len(graph.conflicts),issues=issues)
+    if claims and claim_support<80: issues.append("部分分析 Claim 未绑定支持证据")
+    if red_team and red_team_coverage<100: issues.append("部分 Red Team 挑战未指向实际 Claim")
+    if claims and judge_coverage<100: issues.append("部分关键 Claim 尚无 Judge 结果")
+    if reviews and review_coverage<50: issues.append("多数 Review Finding 未绑定财务或材料证据")
+    if isolated>20: issues.append(f"孤立节点比例为 {isolated:.1f}%")
+    base=trace*.25+verified*.2+coverage*.2
+    lifecycle_parts=[]
+    if claims: lifecycle_parts.extend([claim_support,judge_coverage])
+    if red_team: lifecycle_parts.append(red_team_coverage)
+    if reviews: lifecycle_parts.append(review_coverage)
+    lifecycle=sum(lifecycle_parts)/len(lifecycle_parts) if lifecycle_parts else coverage
+    score=max(0,min(100,base+lifecycle*.3+(100-isolated)*.05))
+    return EvidenceGraphQuality(score=round(score,1),traceability_rate=round(trace,1),verified_rate=round(verified,1),relation_coverage=round(coverage,1),unresolved_conflicts=len(graph.conflicts),issues=issues)

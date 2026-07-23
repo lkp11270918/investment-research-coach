@@ -83,7 +83,7 @@ def generate_research_map(project_id: str, industry: str, graph: EvidenceGraph, 
 def _company_specific_specs(graph: EvidenceGraph) -> tuple[list[tuple], list[str]]:
     specs: list[tuple] = []
     variables: list[str] = []
-    candidates = [node for node in graph.nodes if node.node_type in {"risk", "financial_fact", "assumption", "management_opinion"}]
+    candidates = [node for node in graph.nodes if node.node_type in {"risk", "financial_fact", "assumption", "management_opinion", "management_claim"}]
     for node in candidates[:8]:
         label = node.label.strip()
         if not label:

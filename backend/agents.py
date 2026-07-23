@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import re
 
 from .financial_parser import expected_financial_metric_names, extract_structured_financial_evidence
 from .value_investing_doctrine import doctrine_findings
@@ -263,6 +264,12 @@ def run_management_view_comparison(state: WorkflowState) -> AgentOutput:
     financial = state.evidence_by_category(EvidenceCategory.FINANCIAL_FACT)
     sell_side_documents = [doc for doc in state.source_documents if doc.source_type == SourceType.SELL_SIDE_SUMMARY]
     evidence_ids = [item.evidence_id for item in [*management, *sell_side, *financial]]
+    documents_by_id = {doc.source_id: doc for doc in sell_side_documents}
+    views_by_source: dict[str, list[EvidenceItem]] = {}
+    for item in sell_side:
+        for ref in item.source_refs:
+            if ref.source_id in documents_by_id:
+                views_by_source.setdefault(ref.source_id, []).append(item)
     missing = []
     if not management:
         missing.append("管理层观点")
@@ -271,28 +278,139 @@ def run_management_view_comparison(state: WorkflowState) -> AgentOutput:
     if not financial:
         missing.append("可用于对照叙事的财务证据")
 
+    findings: list[AgentFinding] = []
+    for source_id, items in views_by_source.items():
+        source = documents_by_id[source_id]
+        findings.append(
+            AgentFinding(
+                title=f"单份卖方观点｜{source.title}",
+                detail="；".join(item.statement for item in items),
+                classification="opinion_based",
+                evidence_ids=[item.evidence_id for item in items],
+                confidence=Confidence.MEDIUM,
+            )
+        )
+
+    if len(views_by_source) >= 2:
+        source_text = {
+            source_id: "；".join(item.statement for item in items)
+            for source_id, items in views_by_source.items()
+        }
+        variables = (
+            "需求", "收入", "销量", "价格", "利润率", "净利润", "产能", "产能利用率",
+            "资本开支", "自由现金流", "库存", "分红", "估值", "PE", "PB",
+        )
+        common = [
+            term
+            for term in variables
+            if sum(term.lower() in text.lower() for text in source_text.values()) >= 2
+        ]
+        all_sell_ids = [item.evidence_id for items in views_by_source.values() for item in items]
+        findings.append(
+            AgentFinding(
+                title="卖方共同点",
+                detail=(
+                    f"多份报告共同围绕{ '、'.join(common) }形成判断，但方向和幅度仍需分别核对。"
+                    if common
+                    else "各报告关注变量尚未形成明确交集，当前不存在可直接认定的卖方共识。"
+                ),
+                classification="ai_reasoning",
+                evidence_ids=all_sell_ids,
+                confidence=Confidence.MEDIUM if common else Confidence.LOW,
+            )
+        )
+        source_views = "；".join(
+            f"{documents_by_id[source_id].title}：{text}"
+            for source_id, text in source_text.items()
+        )
+        findings.append(
+            AgentFinding(
+                title="卖方分歧点",
+                detail=source_views,
+                classification="opinion_based",
+                evidence_ids=all_sell_ids,
+                confidence=Confidence.MEDIUM,
+            )
+        )
+        values = {
+            source_id: re.findall(r"\d+(?:\.\d+)?%|\d+(?:\.\d+)?倍", text)
+            for source_id, text in source_text.items()
+        }
+        directions = {
+            source_id: [
+                word for word in ("增长", "提升", "上升", "下降", "压低", "过剩", "谨慎", "乐观")
+                if word in text
+            ]
+            for source_id, text in source_text.items()
+        }
+        differing_values = len({tuple(item) for item in values.values()}) > 1
+        differing_directions = len({tuple(item) for item in directions.values()}) > 1
+        mechanisms = []
+        if differing_values:
+            mechanisms.append("增长率或估值倍数口径不同")
+        if differing_directions:
+            mechanisms.append("对经营变量方向和风险权重的判断不同")
+        if common:
+            mechanisms.append(f"对{ '、'.join(common) }的假设不同")
+        findings.append(
+            AgentFinding(
+                title="分歧来源",
+                detail="；".join(mechanisms) or "材料只给出结论，尚缺少预测模型和参数，无法确认分歧来源。",
+                classification="ai_reasoning",
+                evidence_ids=all_sell_ids,
+                confidence=Confidence.MEDIUM if mechanisms else Confidence.LOW,
+            )
+        )
+        findings.append(
+            AgentFinding(
+                title="核心假设差异",
+                detail="；".join(
+                    f"{documents_by_id[source_id].title}的显式参数：{', '.join(values[source_id]) or '未提供'}；方向判断：{', '.join(directions[source_id]) or '未提供'}"
+                    for source_id in source_text
+                ),
+                classification="assumption_based",
+                evidence_ids=all_sell_ids,
+                confidence=Confidence.MEDIUM,
+            )
+        )
+        findings.append(
+            AgentFinding(
+                title="买方需独立验证的问题",
+                detail=f"统一比较期间和口径，使用公司原始披露验证{ '、'.join(common) if common else '各报告核心预测变量' }，并对需求、利润率、资本开支和估值假设做敏感性测试。",
+                classification="verification_question",
+                evidence_ids=all_sell_ids,
+                confidence=Confidence.MEDIUM,
+            )
+        )
+    else:
+        findings.append(
+            AgentFinding(
+                title="多卖方比较资料不足",
+                detail="至少需要两份可区分来源的卖方观点，才能计算共同点、分歧点和分歧来源。",
+                classification="missing_data",
+                evidence_ids=[item.evidence_id for item in sell_side],
+                confidence=Confidence.LOW,
+            )
+        )
+
+    if management and financial:
+        findings.append(
+            AgentFinding(
+                title="管理层叙事与财务现实对照",
+                detail=f"管理层表述：{'；'.join(item.statement for item in management[:3])}；财务事实：{'；'.join(item.statement for item in financial[:5])}。二者是否一致仍需按期间和指标验证。",
+                classification="ai_reasoning",
+                evidence_ids=[item.evidence_id for item in [*management[:3], *financial[:5]]],
+                confidence=Confidence.MEDIUM,
+            )
+        )
+
     return AgentOutput(
         agent_name="Management & View Comparison Skill",
         status=AgentStatus.PARTIAL if evidence_ids else AgentStatus.FAIL,
         summary=(
             f"已检查管理层、卖方与财务现实对比所需资料；当前识别 {len(sell_side_documents)} 份卖方来源。"
         ),
-        findings=[
-            AgentFinding(
-                title="卖方观点不得直接变成买方结论",
-                detail="卖方共识和分歧只能作为输入，最终判断必须经过证据、反证和价值陷阱检查。",
-                classification="ai_reasoning",
-                evidence_ids=evidence_ids,
-                confidence=Confidence.LOW,
-            ),
-            AgentFinding(
-                title="多卖方观点横向比较要求",
-                detail="如果上传多份卖方研报，必须比较共同点、分歧点、分歧来源、核心假设差异，并标出买方需独立验证的问题。",
-                classification="ai_reasoning",
-                evidence_ids=[item.evidence_id for item in sell_side],
-                confidence=Confidence.LOW,
-            )
-        ],
+        findings=findings,
         evidence_ids=evidence_ids,
         missing_materials=missing,
         confidence=Confidence.LOW,
@@ -353,7 +471,11 @@ def run_compliance_gate(state: WorkflowState, gate_name: str, draft_memo: Resear
         evidence_issues.extend(f"跨来源数据冲突：{item}" for item in state.evidence_graph.conflicts)
 
     review_outputs = state.skill_outputs or state.agent_outputs
+    analysis_keys = set(state.research_plan.required_skills if state.research_plan else [])
+    analysis_keys.add("value_trap_contradiction")
     for key, output in review_outputs.items():
+        if key not in analysis_keys:
+            continue
         for finding in output.findings:
             if finding.classification in {"fact_based", "unsupported_claim"} and not finding.evidence_ids:
                 unsupported.append(f"{key}：{finding.title} - {finding.detail}")
@@ -363,11 +485,24 @@ def run_compliance_gate(state: WorkflowState, gate_name: str, draft_memo: Resear
         evidence_issues.append("价值陷阱与反证检查未完成，不能进入 Memo。")
     if state.research_judgment.unresolved_critical_count:
         evidence_issues.append(f"仍有 {state.research_judgment.unresolved_critical_count} 个关键反证缺少证据，不能进入正式 Memo。")
+    sell_side_source_ids = {
+        source.source_id
+        for source in state.source_documents
+        if source.source_type == SourceType.SELL_SIDE_SUMMARY
+    }
+    independent_fact_count = sum(
+        item.category in {EvidenceCategory.FACT, EvidenceCategory.FINANCIAL_FACT}
+        and bool(item.source_refs)
+        and any(ref.source_id not in sell_side_source_ids for ref in item.source_refs)
+        for item in state.evidence_items
+    )
+    if independent_fact_count == 0:
+        evidence_issues.append("缺少公司披露、财务表或其他可追溯的独立事实证据，不能仅凭观点材料生成正式 Memo。")
 
     support_ids = {evidence_id for output in review_outputs.values() for finding in output.findings for evidence_id in finding.evidence_ids}
     if support_ids:
         categories = {item.category for item in state.evidence_items if item.evidence_id in support_ids}
-        if categories and categories.issubset({EvidenceCategory.SELL_SIDE_OPINION, EvidenceCategory.MANAGEMENT_OPINION, EvidenceCategory.NEWS_OR_MARKET_OPINION}):
+        if categories and categories.issubset({EvidenceCategory.SELL_SIDE_OPINION, EvidenceCategory.MANAGEMENT_OPINION, EvidenceCategory.NEWS_OR_MARKET_OPINION, EvidenceCategory.USER_OPINION}):
             evidence_issues.append("当前分析只引用观点类材料，缺少独立事实证据，存在复读风险。")
 
     if state.company_profile.user_mode == UserMode.TO_C and draft_memo and draft_memo.markdown:
@@ -509,6 +644,30 @@ def run_research_coach_review(memo_text: str, state: WorkflowState) -> AgentOutp
                     confidence=Confidence.HIGH,
                 )
             )
+
+    for anomaly in state.financial_anomalies:
+        if anomaly.description not in memo_text:
+            findings.append(
+                AgentFinding(
+                    title=f"财务异常未解释：{anomaly.anomaly_type}",
+                    detail=f"{anomaly.description}。用户 Memo 未解释该异常；应回答：{anomaly.verification_question}",
+                    classification="value_trap_omission",
+                    evidence_ids=anomaly.evidence_ids,
+                    confidence=Confidence.HIGH if anomaly.severity == "high" else Confidence.MEDIUM,
+                )
+            )
+    if state.valuation_analysis.warnings and not any(
+        keyword in memo_text for keyword in ("估值假设", "安全边际", "敏感性")
+    ):
+        findings.append(
+            AgentFinding(
+                title="估值假设与安全边际缺口",
+                detail="；".join(state.valuation_analysis.warnings),
+                classification="evidence_gap",
+                evidence_ids=state.valuation_analysis.evidence_ids,
+                confidence=Confidence.MEDIUM,
+            )
+        )
 
     return AgentOutput(
         agent_name="Research Coach Review Mode",

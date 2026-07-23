@@ -20,7 +20,7 @@ def record_event(state: WorkflowState, stage: str, status: str, detail: str = ""
 def build_research_plan(state: WorkflowState) -> ResearchExecutionPlan:
     industry = state.company_profile.industry.lower()
     company_type = "general"
-    required = ["financial_quality_dividend", "valuation_margin", "general_business_analysis"]
+    required = ["financial_quality_dividend", "business_model_moat", "valuation_margin", "general_business_analysis"]
     skipped: list[str] = []
     questions = ["盈利是否能稳定转化为现金流？", "竞争优势和关键经营假设是什么？", "什么证据会推翻当前判断？"]
     if any(token in industry for token in ("银行", "bank")):
@@ -50,6 +50,6 @@ def build_research_plan(state: WorkflowState) -> ResearchExecutionPlan:
     if not state.raw_materials:
         required = []
         skipped = list(SKILL_LABELS)[:-1]
-    all_skills={"financial_quality_dividend","valuation_margin","management_view_comparison","bank_analysis","manufacturing_analysis","consumer_analysis","utility_analysis","general_business_analysis"}
+    all_skills={"financial_quality_dividend","business_model_moat","valuation_margin","management_view_comparison","bank_analysis","manufacturing_analysis","consumer_analysis","utility_analysis","general_business_analysis"}
     skipped=sorted(all_skills-set(required))
     return ResearchExecutionPlan(company_type=company_type, required_skills=required, skipped_skills=skipped, parallel_groups=[required] if required else [], priority_questions=questions, missing_materials=[] if state.raw_materials else ["公司研究资料"], minimum_evidence={item:1 for item in required}, dependencies={}, replan_triggers=["新增关键证据", "出现跨来源冲突", "用户修改研究目标"], rationale=f"根据{state.company_profile.industry or '未指定行业'}和当前资料覆盖生成。")

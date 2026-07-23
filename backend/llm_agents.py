@@ -22,6 +22,7 @@ from .models import (
     ComplianceGateOutput,
     Confidence,
     DowngradedClaim,
+    DocumentIntelligence,
     EvidenceCategory,
     EvidenceItem,
     SourceDocument,
@@ -65,8 +66,23 @@ MATERIAL_ORGANIZER_PROMPT = (
     {
       "input_index": 0,
       "source_type": "financial_table | annual_report_summary | announcement_excerpt | management_note | sell_side_summary | news_summary | industry_material | user_note | institution_doctrine | historical_memo | failed_case | memo_template | other",
+      "declared_type": "string",
+      "detected_type": "string",
+      "type_conflict": false,
+      "publisher": "string or null",
+      "published_at": "string or null",
+      "reporting_period": "string or null",
+      "document_scope": "string or null",
+      "reliability_level": "primary | secondary | user_note | unknown",
       "reliability_note": "string",
-      "period_covered": "string or null"
+      "period_covered": "string or null",
+      "contains_financial_data": false,
+      "contains_management_views": false,
+      "contains_sell_side_views": false,
+      "contains_forecasts": false,
+      "contains_unverified_claims": false,
+      "usable_sections": ["string"],
+      "warnings": ["string"]
     }
   ],
   "findings": [
@@ -173,6 +189,29 @@ BUSINESS_MODEL_PROMPT = (
 - 如果缺少收入结构、利润来源、成本结构、行业竞争格局、资本开支需求、需求稳定性等资料，必须写入 missing_materials。
 - 需要指出核心经营变量，例如销量、价格、成本、利用率、来水、电价、客流、开店、产能、资本开支等；但只能使用 evidence 中出现或由 evidence 明确支持的变量。
 - 每条 finding 尽量引用 evidence_ids；不要引用不存在的 evidence_id。
+
+除 findings 外，必须返回结构化 business_model：
+{
+  "value_proposition": "公司向谁提供什么价值",
+  "customers": ["string"],
+  "revenue_sources": ["string"],
+  "profit_pools": ["string"],
+  "cost_structure": ["string"],
+  "cash_flow_characteristics": ["string"],
+  "capital_intensity": "string",
+  "competitive_advantages": ["string"],
+  "moat_types": ["string"],
+  "moat_evidence": ["string"],
+  "moat_durability": "string",
+  "moat_erosion_risks": ["string"],
+  "circle_of_competence": {
+    "status": "inside | partial | outside | insufficient_data",
+    "reasoning": "string",
+    "unknowns": ["string"]
+  },
+  "evidence_ids": ["EV-..."],
+  "missing_information": ["string"]
+}
 
 返回 JSON 格式：
 {
@@ -477,12 +516,20 @@ def _gate_status(value: Any, fallback_status: str) -> str:
 def _is_blocking_warning(text: str) -> bool:
     safe_phrases = [
         "未输出",
+        "未将",
+        "未复述",
+        "未重构",
+        "未出现",
+        "未包含",
         "符合合规",
         "符合",
         "不构成投资建议",
         "不构成",
         "无交易指令",
         "未发现",
+        "均有明确来源",
+        "所有财务数字均有",
+        "不存在违规",
     ]
     if any(phrase in text for phrase in safe_phrases):
         return False
@@ -506,10 +553,94 @@ def _is_blocking_warning(text: str) -> bool:
     return any(term in text for term in blocking_terms)
 
 
+def _apply_material_intelligence(state: WorkflowState, raw_docs: list[Any]) -> None:
+    by_index = {
+        int(item.get("input_index", -1)): item
+        for item in raw_docs
+        if isinstance(item, dict)
+    }
+    intelligence = []
+    documents = []
+    primary_types = {SourceType.ANNUAL_REPORT_SUMMARY, SourceType.ANNOUNCEMENT_EXCERPT, SourceType.FINANCIAL_TABLE}
+    secondary_types = {SourceType.SELL_SIDE_SUMMARY, SourceType.NEWS_SUMMARY, SourceType.INDUSTRY_MATERIAL}
+    for index, raw in enumerate(state.raw_materials):
+        model_data = by_index.get(index, {})
+        deterministic_type, deterministic_confidence = classify_material(raw)
+        detected = _source_type(
+            model_data.get("detected_type") or model_data.get("source_type"),
+            deterministic_type,
+        )
+        # A high-confidence content signal corrects a model that merely echoed the
+        # user-declared type. This is validation, not a replacement for model reading.
+        if (
+            deterministic_confidence >= 0.75
+            and deterministic_type != raw.source_type
+            and detected == raw.source_type
+        ):
+            detected = deterministic_type
+        content = raw.content
+        publisher = model_data.get("publisher") or raw.publisher
+        published_at = model_data.get("published_at") or (raw.published_at.isoformat() if raw.published_at else None)
+        reporting_period = model_data.get("reporting_period") or model_data.get("period_covered") or raw.period_covered
+        if detected in primary_types:
+            reliability = "primary"
+            reason = "公司披露、公告或结构化财务资料，仍需核对原始文件和口径。"
+        elif detected in secondary_types:
+            reliability = "secondary"
+            reason = "卖方、新闻或行业二手资料，只能作为观点和交叉验证输入。"
+        elif detected == SourceType.USER_NOTE:
+            reliability = "user_note"
+            reason = "用户研究笔记，不视为独立事实来源。"
+        else:
+            reliability = "unknown"
+            reason = "来源性质无法可靠确认。"
+        model_reliability = str(model_data.get("reliability_level") or "")
+        if model_reliability in {"primary", "secondary", "user_note", "unknown"}:
+            reliability = model_reliability
+        warnings = [str(item) for item in model_data.get("warnings", [])] if isinstance(model_data.get("warnings", []), list) else []
+        conflict = detected != raw.source_type
+        if conflict:
+            warnings.append(f"用户声明类型 {raw.source_type.value} 与正文识别类型 {detected.value} 不一致。")
+        document = state.source_documents[index] if index < len(state.source_documents) else SourceDocument(title=raw.title, source_type=detected)
+        document.source_type = detected
+        document.publisher = publisher
+        document.published_at = raw.published_at
+        document.period_covered = reporting_period
+        document.reliability_note = str(model_data.get("reliability_note") or model_data.get("reliability_reason") or reason)
+        documents.append(document)
+        intelligence.append(
+            DocumentIntelligence(
+                document_id=document.source_id,
+                declared_type=raw.source_type.value,
+                detected_type=detected.value,
+                type_conflict=conflict,
+                title=raw.title,
+                publisher=str(publisher) if publisher else None,
+                published_at=str(published_at) if published_at else None,
+                reporting_period=str(reporting_period) if reporting_period else None,
+                document_scope=str(model_data.get("document_scope") or "") or None,
+                reliability_level=reliability,
+                reliability_reason=str(model_data.get("reliability_reason") or model_data.get("reliability_note") or reason),
+                contains_financial_data=bool(model_data.get("contains_financial_data")) or any(term in content for term in ("营业收入", "净利润", "现金流", "资产负债")),
+                contains_management_views=bool(model_data.get("contains_management_views")) or any(term in content for term in ("管理层", "董事长", "业绩会")),
+                contains_sell_side_views=bool(model_data.get("contains_sell_side_views")) or detected == SourceType.SELL_SIDE_SUMMARY,
+                contains_forecasts=bool(model_data.get("contains_forecasts")) or any(term in content for term in ("预测", "预计", "目标价", "盈利预测")),
+                contains_unverified_claims=bool(model_data.get("contains_unverified_claims")) or detected in {SourceType.SELL_SIDE_SUMMARY, SourceType.NEWS_SUMMARY, SourceType.USER_NOTE},
+                usable_sections=[str(item) for item in model_data.get("usable_sections", [])] if isinstance(model_data.get("usable_sections", []), list) else [],
+                warnings=list(dict.fromkeys(warnings)),
+            )
+        )
+    state.source_documents = documents
+    state.document_intelligence = intelligence
+
+
 def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None = None) -> AgentOutput:
     client = client or OpenAIClient()
     if not client.available:
-        return run_stub_material_organizer(state)
+        output = run_stub_material_organizer(state)
+        _apply_material_intelligence(state, [])
+        output.structured_output = {"documents": [item.model_dump(mode="json") for item in state.document_intelligence]}
+        return output
 
     try:
         result = client.generate_json(
@@ -536,6 +667,8 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
     except LLMError as exc:
         output = run_stub_material_organizer(state)
         output.warnings.append(f"LLM Material Organizer 调用失败，已回退规则骨架：{exc}")
+        _apply_material_intelligence(state, [])
+        output.structured_output = {"documents": [item.model_dump(mode="json") for item in state.document_intelligence]}
         return output
 
     documents: list[SourceDocument] = []
@@ -562,6 +695,7 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
             )
         )
     state.source_documents = documents
+    _apply_material_intelligence(state, raw_docs)
 
     findings = [_finding(item) for item in result.get("findings", []) if isinstance(item, dict)]
     return AgentOutput(
@@ -572,6 +706,7 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
         missing_materials=[str(item) for item in result.get("missing_materials", [])],
         confidence=_confidence(result.get("confidence")),
         warnings=[str(item) for item in result.get("warnings", [])],
+        structured_output={"documents": [item.model_dump(mode="json") for item in state.document_intelligence]},
     )
 
 
@@ -770,10 +905,64 @@ def run_financial_quality_dividend_llm(state: WorkflowState, client: OpenAIClien
     )
 
 
+def _business_model_structure(raw: Any, findings: list[AgentFinding], state: WorkflowState) -> dict[str, Any]:
+    data = raw if isinstance(raw, dict) else {}
+    valid_ids = {item.evidence_id for item in state.evidence_items}
+    evidence_ids = [
+        str(item) for item in data.get("evidence_ids", []) if str(item) in valid_ids
+    ] or list(dict.fromkeys(item for finding in findings for item in finding.evidence_ids))
+    circle = data.get("circle_of_competence", {})
+    if not isinstance(circle, dict):
+        circle = {}
+    status = str(circle.get("status") or "insufficient_data")
+    if status not in {"inside", "partial", "outside", "insufficient_data"}:
+        status = "insufficient_data"
+
+    def strings(key: str) -> list[str]:
+        value = data.get(key, [])
+        return [str(item) for item in value] if isinstance(value, list) else []
+
+    def finding_details(*terms: str) -> list[str]:
+        return [
+            item.detail for item in findings
+            if item.detail and any(term in item.title for term in terms)
+        ]
+
+    def evidence_statements(*terms: str) -> list[str]:
+        return [
+            item.statement for item in state.evidence_items
+            if item.statement and any(term in item.statement for term in terms)
+        ][:3]
+
+    return {
+        "value_proposition": str(data.get("value_proposition") or ""),
+        "customers": strings("customers"),
+        "revenue_sources": strings("revenue_sources"),
+        "profit_pools": strings("profit_pools"),
+        "cost_structure": strings("cost_structure") or finding_details("成本","收入结构及利润来源") or evidence_statements("成本主要","成本结构"),
+        "cash_flow_characteristics": strings("cash_flow_characteristics") or finding_details("现金流"),
+        "capital_intensity": str(data.get("capital_intensity") or ""),
+        "competitive_advantages": strings("competitive_advantages"),
+        "moat_types": strings("moat_types"),
+        "moat_evidence": strings("moat_evidence") or finding_details("竞争优势","转换成本","护城河"),
+        "moat_durability": str(data.get("moat_durability") or ""),
+        "moat_erosion_risks": strings("moat_erosion_risks") or finding_details("竞争优势","行业竞争","护城河"),
+        "circle_of_competence": {
+            "status": status,
+            "reasoning": str(circle.get("reasoning") or "当前资料不足以完整判断能力圈。"),
+            "unknowns": [str(item) for item in circle.get("unknowns", [])] if isinstance(circle.get("unknowns", []), list) else [],
+        },
+        "evidence_ids": list(dict.fromkeys(evidence_ids)),
+        "missing_information": strings("missing_information"),
+    }
+
+
 def run_business_model_moat_llm(state: WorkflowState, client: OpenAIClient | None = None) -> AgentOutput:
     client = client or OpenAIClient()
     if not client.available:
-        return run_stub_business_model_moat(state)
+        output = run_stub_business_model_moat(state)
+        output.structured_output = _business_model_structure({}, output.findings, state)
+        return output
 
     business_evidence = [
         item
@@ -790,7 +979,9 @@ def run_business_model_moat_llm(state: WorkflowState, client: OpenAIClient | Non
         }
     ]
     if not business_evidence:
-        return run_stub_business_model_moat(state)
+        output = run_stub_business_model_moat(state)
+        output.structured_output = _business_model_structure({}, output.findings, state)
+        return output
 
     try:
         result = client.generate_json(
@@ -817,6 +1008,7 @@ def run_business_model_moat_llm(state: WorkflowState, client: OpenAIClient | Non
     except LLMError as exc:
         output = run_stub_business_model_moat(state)
         output.warnings.append(f"LLM Business Model 调用失败，已回退规则骨架：{exc}")
+        output.structured_output = _business_model_structure({}, output.findings, state)
         return output
 
     valid_evidence_ids = {item.evidence_id for item in state.evidence_items}
@@ -846,13 +1038,15 @@ def run_business_model_moat_llm(state: WorkflowState, client: OpenAIClient | Non
         missing_materials=missing_materials,
         confidence=confidence,
         warnings=[str(item) for item in result.get("warnings", [])],
+        structured_output=_business_model_structure(result.get("business_model", {}), findings, state),
     )
 
 
 def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClient | None = None) -> AgentOutput:
     client = client or OpenAIClient()
+    rule_comparison = run_stub_management_view_comparison(state)
     if not client.available:
-        return run_stub_management_view_comparison(state)
+        return rule_comparison
 
     view_evidence = [
         item
@@ -869,7 +1063,7 @@ def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClien
         }
     ]
     if not view_evidence:
-        return run_stub_management_view_comparison(state)
+        return rule_comparison
 
     prior_outputs = {
         key: value.model_dump(mode="json")
@@ -914,7 +1108,7 @@ def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClien
             },
         )
     except LLMError as exc:
-        output = run_stub_management_view_comparison(state)
+        output = rule_comparison
         output.warnings.append(f"LLM Management View 调用失败，已回退规则骨架：{exc}")
         return output
 
@@ -926,6 +1120,16 @@ def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClien
         finding = _finding(raw)
         finding.evidence_ids = [item for item in finding.evidence_ids if item in valid_evidence_ids]
         findings.append(finding)
+    if len(sell_side_documents) >= 2:
+        required_titles = ("卖方共同点", "卖方分歧点", "分歧来源", "核心假设差异", "买方需独立验证的问题")
+        existing_titles = {finding.title for finding in findings}
+        for fallback_finding in rule_comparison.findings:
+            if (
+                fallback_finding.title.startswith("单份卖方观点｜")
+                or fallback_finding.title in required_titles
+            ) and fallback_finding.title not in existing_titles:
+                findings.append(fallback_finding)
+                existing_titles.add(fallback_finding.title)
 
     evidence_ids = sorted({evidence_id for finding in findings for evidence_id in finding.evidence_ids})
     missing_materials = [str(item) for item in result.get("missing_materials", [])]
@@ -1090,10 +1294,17 @@ def run_research_coach_review_llm(
                     }
                     for item in state.evidence_items
                 ],
+                "financial_calculations": [
+                    item.model_dump(mode="json") for item in state.financial_calculations
+                ],
+                "financial_anomalies": [
+                    item.model_dump(mode="json") for item in state.financial_anomalies
+                ],
+                "valuation_analysis": state.valuation_analysis.model_dump(mode="json"),
                 "prior_agent_outputs": {
                     key: value.model_dump(mode="json")
                     for key, value in (state.skill_outputs or state.agent_outputs).items()
-                    if key in {"firm_doctrine_case_retrieval", "material_organizer", "evidence_extractor"}
+                    if key in {"doctrine_context", "material_organization", "evidence_extraction"}
                 },
                 "mandatory_review_dimensions": [
                     "卖方复读识别",
@@ -1234,6 +1445,9 @@ def run_compliance_gate_llm(
     compliance_warnings = [
         *rule_gate.compliance_warnings,
         *[str(item) for item in result.get("compliance_warnings", [])],
+    ]
+    compliance_warnings = [
+        item for item in compliance_warnings if _is_blocking_warning(item)
     ]
     rewrite_suggestions = [
         *rule_gate.rewrite_suggestions,

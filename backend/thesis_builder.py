@@ -45,7 +45,7 @@ def assess_thesis(draft: ThesisDraft, graph: EvidenceGraph) -> ThesisAssessment:
         issues.append("每种情景都需要关键假设和可观察触发条件")
     if draft.user_internal_label and any(term in draft.user_internal_label.lower() for term in PROHIBITED_PUBLIC_LABELS):
         issues.append("To C内部判断不能使用买入、卖出、增持或减持等公开投资评级")
-    sell_side_ids = {node.evidence_id for node in graph.nodes if node.evidence_id and node.node_type == "sell_side_opinion"}
+    sell_side_ids = {node.evidence_id for node in graph.nodes if node.evidence_id and node.node_type in {"sell_side_opinion", "sell_side_claim"}}
     repetition = bool(valid_support) and set(valid_support).issubset(sell_side_ids)
     if repetition:
         issues.append("支持证据全部来自卖方观点，存在卖方复读风险")

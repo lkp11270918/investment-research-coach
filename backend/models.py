@@ -169,6 +169,13 @@ class EvidenceRelation(str, Enum):
     DUPLICATES = "duplicates"
     MENTIONS = "mentions"
     QUESTIONED_BY = "questioned_by"
+    EXTRACTED_FROM = "extracted_from"
+    CHALLENGES = "challenges"
+    VALIDATED_BY = "validated_by"
+    REJECTED_BY = "rejected_by"
+    INCLUDED_IN = "included_in"
+    RESPONDS_TO = "responds_to"
+    MISSING_EVIDENCE_FOR = "missing_evidence_for"
 
 
 class EvidenceGraphNode(BaseModel):
@@ -280,6 +287,9 @@ class SkillResult(BaseModel):
     model_usage: list[ModelUsageRecord] = Field(default_factory=list)
     failure_code: str | None = None
     attempt: int = 1
+    execution_mode: Literal["model", "deterministic", "degraded", "not_run"] = "deterministic"
+    model_name: str | None = None
+    structured_output: dict[str, Any] = Field(default_factory=dict)
 
 
 class ResearchClaim(BaseModel):
@@ -294,6 +304,9 @@ class ResearchClaim(BaseModel):
     confidence: Confidence = Confidence.LOW
     falsification_conditions: list[str] = Field(default_factory=list)
     source_skill_ids: list[str] = Field(default_factory=list)
+    topics: list[str] = Field(default_factory=list)
+    primary_section: str | None = None
+    secondary_sections: list[str] = Field(default_factory=list)
 
 
 class JudgeDecision(BaseModel):
@@ -600,6 +613,27 @@ class SourceDocument(BaseModel):
     parse_warnings: list[str] = Field(default_factory=list)
 
 
+class DocumentIntelligence(BaseModel):
+    document_id: str
+    declared_type: str
+    detected_type: str
+    type_conflict: bool = False
+    title: str
+    publisher: str | None = None
+    published_at: str | None = None
+    reporting_period: str | None = None
+    document_scope: str | None = None
+    reliability_level: Literal["primary", "secondary", "user_note", "unknown"] = "unknown"
+    reliability_reason: str = ""
+    contains_financial_data: bool = False
+    contains_management_views: bool = False
+    contains_sell_side_views: bool = False
+    contains_forecasts: bool = False
+    contains_unverified_claims: bool = False
+    usable_sections: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class SourceRef(BaseModel):
     source_id: str
     excerpt: str | None = None
@@ -651,6 +685,7 @@ class AgentOutput(BaseModel):
     missing_materials: list[str] = Field(default_factory=list)
     confidence: Confidence = Confidence.LOW
     warnings: list[str] = Field(default_factory=list)
+    structured_output: dict[str, Any] = Field(default_factory=dict)
 
 
 class ViewComparisonPoint(BaseModel):
@@ -704,6 +739,11 @@ class MemoSection(BaseModel):
     body: str
     evidence_ids: list[str] = Field(default_factory=list)
     confidence: Confidence = Confidence.LOW
+    status: Literal["complete", "partial", "insufficient_data", "not_applicable"] = "partial"
+    summary: str | None = None
+    supporting_claim_ids: list[str] = Field(default_factory=list)
+    counter_claim_ids: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
 
 
 class ResearchMemo(BaseModel):
@@ -774,6 +814,7 @@ class WorkflowState(BaseModel):
     company_profile: CompanyProfile
     raw_materials: list[RawMaterial] = Field(default_factory=list)
     source_documents: list[SourceDocument] = Field(default_factory=list)
+    document_intelligence: list[DocumentIntelligence] = Field(default_factory=list)
     evidence_items: list[EvidenceItem] = Field(default_factory=list)
     evidence_graph: EvidenceGraph = Field(default_factory=EvidenceGraph)
     agent_outputs: dict[str, AgentOutput] = Field(default_factory=dict)
@@ -793,6 +834,7 @@ class WorkflowState(BaseModel):
     post_memo_gate: ComplianceGateOutput | None = None
     memo: ResearchMemo | None = None
     workflow_status: str = "completed"
+    current_stage: str = "initialized"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def evidence_by_category(self, *categories: EvidenceCategory) -> list[EvidenceItem]:

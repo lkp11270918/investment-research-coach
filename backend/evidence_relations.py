@@ -15,7 +15,7 @@ QUESTION_CUES = ("是否", "为何", "待验证", "不确定", "质疑", "风险
 
 
 def infer_semantic_edges(nodes: list[EvidenceGraphNode]) -> list[EvidenceGraphEdge]:
-    candidates = [node for node in nodes if node.node_type != "source" and node.label.strip()]
+    candidates = [node for node in nodes if node.node_type not in {"source", "source_document"} and node.label.strip()]
     edges: list[EvidenceGraphEdge] = []
     for left, right in combinations(candidates[:500], 2):
         similarity = _similarity(left.label, right.label)
@@ -60,7 +60,7 @@ def infer_semantic_edges_nli(nodes: list[EvidenceGraphNode], client: OpenAIClien
 
 
 def _embedding_candidates(nodes: list[EvidenceGraphNode], client: OpenAIClient) -> list[EvidenceGraphEdge]:
-    candidates = [node for node in nodes if node.node_type != "source" and node.label.strip()][:160]
+    candidates = [node for node in nodes if node.node_type not in {"source", "source_document"} and node.label.strip()][:160]
     if len(candidates) < 2:
         return []
     try:
