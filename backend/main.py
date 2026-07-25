@@ -10,7 +10,7 @@ from .production import ProductionGuardMiddleware, production_configuration_repo
 
 from .auth import authenticate_user, create_access_token, create_user, delete_user_account, get_current_user, get_optional_current_user, init_auth_db, to_auth_user
 from .file_parsers import FileParseError, cross_check_multimodal_materials, parse_uploaded_file
-from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, CapabilityProfile, DefenseAnswerRequest, DefenseSession, EvidenceEdgeReview, EvidenceGraph, EvidenceNodeReview, HealthResponse, LoginRequest, MaterialBlockReview, MemoSuggestionDecision, MemoVersion, MemoVersionCreate, ProjectMaterial, RawMaterial, RegisterRequest, ResearchBehaviorEvent, ResearchJudgment, ResearchMap, ResearchProjectCreate, ResearchProjectDetail, ResearchProjectSummary, ResearchProjectUpdate, ResearchRunDetail, ResearchRunSummary, ResearchTask, ResearchTaskUpdate, ReviewRequest, ThesisDraft, ThesisVersion, UrlIngestRequest, ValuationAssumptions, ValuationAnalysis
+from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, CapabilityProfile, DefenseAnswerRequest, DefenseSession, DeleteAccountRequest, EvidenceEdgeReview, EvidenceGraph, EvidenceNodeReview, HealthResponse, LoginRequest, MaterialBlockReview, MemoSuggestionDecision, MemoVersion, MemoVersionCreate, ProjectMaterial, RawMaterial, RegisterRequest, ResearchBehaviorEvent, ResearchJudgment, ResearchMap, ResearchProjectCreate, ResearchProjectDetail, ResearchProjectSummary, ResearchProjectUpdate, ResearchRunDetail, ResearchRunSummary, ResearchTask, ResearchTaskUpdate, ReviewRequest, ThesisDraft, ThesisVersion, UrlIngestRequest, ValuationAssumptions, ValuationAnalysis
 from .research_map import generate_research_map
 from .storage import create_research_project, decide_memo_suggestion, get_defense_session, get_project_evidence_graph, get_research_project, get_user_run, init_research_runs_db, list_behavior_events, list_capability_profiles, list_defense_sessions, list_evidence_graph_versions, list_memo_versions, list_project_materials, list_research_map_versions, list_research_projects, list_research_tasks, list_thesis_versions, list_user_runs, project_belongs_to_user, record_behavior_event, review_evidence_for_material_block, review_project_evidence_edge, review_project_evidence_node, review_project_material_block, save_capability_profile, save_defense_session, save_memo_version, save_research_map_version, save_thesis_version, save_user_run, sync_defense_tasks, update_memo_suggestions, update_research_project, update_research_task, upsert_research_tasks, get_valuation_assumptions, save_valuation_assumptions
 from .capability_profile import build_capability_profile
@@ -101,7 +101,8 @@ def me(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
 
 
 @app.delete("/api/me", status_code=204)
-def delete_me(current_user: AuthUser = Depends(get_current_user)) -> None:
+def delete_me(request: DeleteAccountRequest, current_user: AuthUser = Depends(get_current_user)) -> None:
+    authenticate_user(email=current_user.email, password=request.password)
     delete_user_account(current_user.user_id)
 
 

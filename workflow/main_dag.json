@@ -1,116 +1,50 @@
 {
   "workflow_name": "value_investing_research_workflow",
-  "version": "0.1.0",
-  "description": "Material-package-driven buy-side value investing research training workflow.",
+  "version": "0.2.0",
+  "description": "Four-agent, skill-driven value investing research training workflow.",
   "nodes": [
     {
-      "id": "firm_doctrine_case_retrieval",
-      "agent": "Firm Doctrine & Case Retrieval Agent",
-      "required_modes": ["to_b"],
-      "optional_modes": ["to_c"],
+      "id": "research_planner",
+      "agent": "Research Planner Agent",
       "depends_on": [],
-      "outputs": ["doctrine_context", "memo_template_requirements", "rating_rules"]
+      "outputs": ["research_plan", "priority_questions", "required_skills", "missing_inputs"]
     },
     {
-      "id": "material_organizer",
-      "agent": "Material Organizer Agent",
-      "required_modes": ["to_c", "to_b"],
-      "depends_on": [],
-      "outputs": ["source_documents", "coverage_map", "missing_materials"]
+      "id": "evidence",
+      "agent": "Evidence Agent",
+      "depends_on": ["research_planner"],
+      "outputs": ["source_documents", "evidence_items", "evidence_graph", "financial_fields"]
     },
     {
-      "id": "evidence_extractor",
-      "agent": "Evidence Extractor Agent",
-      "required_modes": ["to_c", "to_b"],
-      "depends_on": ["material_organizer"],
-      "outputs": ["evidence_items", "financial_fields", "verification_questions"]
+      "id": "research_analyst",
+      "agent": "Research Analyst Agent",
+      "depends_on": ["research_planner", "evidence"],
+      "outputs": ["skill_outputs", "research_claims", "valuation_analysis", "research_judgment"]
     },
     {
-      "id": "financial_quality_dividend",
-      "agent": "Financial Quality & Dividend Agent",
-      "required_modes": ["to_c", "to_b"],
-      "depends_on": ["evidence_extractor", "firm_doctrine_case_retrieval"],
-      "outputs": ["financial_quality_output"]
-    },
-    {
-      "id": "business_model_moat",
-      "agent": "Business Model & Moat Agent",
-      "required_modes": ["to_c", "to_b"],
-      "depends_on": ["evidence_extractor", "firm_doctrine_case_retrieval"],
-      "outputs": ["business_model_output"]
-    },
-    {
-      "id": "management_view_comparison",
-      "agent": "Management & View Comparison Agent",
-      "required_modes": ["to_c", "to_b"],
-      "depends_on": ["evidence_extractor", "financial_quality_dividend", "business_model_moat"],
-      "outputs": ["view_comparison_output"]
-    },
-    {
-      "id": "value_trap_contradiction",
-      "agent": "Value Trap & Contradiction Agent",
-      "required_modes": ["to_c", "to_b"],
-      "depends_on": [
-        "evidence_extractor",
-        "financial_quality_dividend",
-        "business_model_moat",
-        "management_view_comparison",
-        "firm_doctrine_case_retrieval"
-      ],
-      "outputs": ["value_trap_output", "counter_evidence_risks"]
-    },
-    {
-      "id": "pre_memo_gate",
-      "agent": "Evidence & Compliance Gate Agent",
-      "required_modes": ["to_c", "to_b"],
-      "depends_on": [
-        "evidence_extractor",
-        "financial_quality_dividend",
-        "business_model_moat",
-        "management_view_comparison",
-        "value_trap_contradiction"
-      ],
-      "outputs": ["pre_memo_gate_output"]
-    },
-    {
-      "id": "research_memo_generator",
-      "agent": "Research Memo Generator Agent",
-      "required_modes": ["to_c", "to_b"],
-      "depends_on": [
-        "firm_doctrine_case_retrieval",
-        "material_organizer",
-        "evidence_extractor",
-        "financial_quality_dividend",
-        "business_model_moat",
-        "management_view_comparison",
-        "value_trap_contradiction",
-        "pre_memo_gate"
-      ],
-      "outputs": ["draft_research_memo"]
-    },
-    {
-      "id": "post_memo_gate",
-      "agent": "Evidence & Compliance Gate Agent",
-      "required_modes": ["to_c", "to_b"],
-      "depends_on": ["research_memo_generator"],
-      "outputs": ["post_memo_gate_output", "final_research_memo"]
+      "id": "red_team_judge",
+      "agent": "Red Team & Judge Agent",
+      "depends_on": ["research_analyst"],
+      "outputs": ["judge_decisions", "pre_memo_gate", "memo", "post_memo_gate"]
     }
   ],
-  "parallel_groups": [
-    {
-      "id": "analysis_parallel_group",
-      "after": "evidence_extractor",
-      "nodes": [
-        "financial_quality_dividend",
-        "business_model_moat"
-      ]
-    }
-  ],
-  "hard_rules": [
-    "post_memo_gate must run after research_memo_generator",
-    "pre_memo_gate must run before research_memo_generator",
-    "value_trap_contradiction cannot be skipped",
-    "to_c mode cannot output deterministic investment ratings",
-    "missing financial data must remain null or to_be_verified"
+  "deterministic_orchestrator": {
+    "responsibilities": [
+      "stage ordering and dependency checks",
+      "parallel Skill execution",
+      "timeouts and retries",
+      "schema validation",
+      "hard evidence and compliance gates",
+      "persistence and versioning",
+      "stop_after control"
+    ],
+    "memo_writing": "Memo Writing is a Skill and only receives approved or downgraded Judge decisions."
+  },
+  "global_rules": [
+    "key facts must be traceable to source coordinates",
+    "unsupported evidence cannot support a formal conclusion",
+    "To C mode cannot output deterministic investment ratings",
+    "missing financial data must remain null or to_be_verified",
+    "generative models cannot replace deterministic financial or valuation calculations"
   ]
 }

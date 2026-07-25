@@ -11,7 +11,7 @@ import { ReviewPanel } from '@/components/review-panel'
 import { ResearchWorkspacePanel } from '@/components/research-workspace-panel'
 import { CapabilityPanel } from '@/components/capability-panel'
 import type { AnalyzeResult, AuthUser, BackendMemo } from '@/lib/api'
-import { clearStoredToken, fetchCurrentUser, getStoredToken } from '@/lib/api'
+import { clearStoredToken, deleteCurrentAccount, fetchCurrentUser, getStoredToken } from '@/lib/api'
 
 type AppView = 'landing' | 'app'
 type AuthMode = 'login' | 'signup'
@@ -78,6 +78,11 @@ export default function Page() {
     setCurrentProjectId(null)
   }
 
+  const handleDeleteAccount = async (password: string) => {
+    await deleteCurrentAccount(password)
+    handleLogout()
+  }
+
   const handleStartAnalysis = (data: {
     stockCode: string
     companyName: string
@@ -117,6 +122,7 @@ export default function Page() {
             onLogin={handleLogin}
             onSignup={handleSignup}
             onLogout={handleLogout}
+            onDeleteAccount={handleDeleteAccount}
           />
 
           <main>

@@ -428,6 +428,20 @@ export async function fetchCurrentUser(token: string): Promise<AuthUser> {
   return response.json()
 }
 
+export async function deleteCurrentAccount(password: string): Promise<void> {
+  const token = getStoredToken()
+  if (!token) throw new Error('登录状态已失效，请重新登录')
+  const response = await fetch(`${API_BASE_URL}/api/me`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ password }),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+}
+
 const sourceTypeByMaterialId: Record<string, string> = {
   financial: 'financial_table',
   annual: 'annual_report_summary',

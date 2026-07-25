@@ -550,6 +550,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -842,7 +846,7 @@ class WorkflowState(BaseModel):
         return [item for item in self.evidence_items if item.category in allowed]
 
     def output_for(self, key: str) -> AgentOutput | None:
-        """Read new Skill output first and transparently support historical runs."""
+        """Read the current Skill output first, then fall back to stored output."""
         output = self.skill_outputs.get(key) or self.agent_outputs.get(key)
         if isinstance(output, AgentOutput):
             return output

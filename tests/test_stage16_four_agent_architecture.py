@@ -74,10 +74,10 @@ class FourAgentArchitectureTest(unittest.TestCase):
         self.assertIn("缺少证据来源", titles)
         self.assertIn("缺少反证风险", titles)
 
-    def test_historical_nine_agent_payload_remains_readable(self):
-        historical = WorkflowState.model_validate({"company_profile":{"company_name":"旧项目","industry":"制造业"},"agent_outputs":{"financial_quality_dividend":AgentOutput(agent_name="Financial Agent",summary="旧财务结论").model_dump(mode="json")}})
-        self.assertEqual(historical.output_for("financial_quality_dividend").summary, "旧财务结论")
-        self.assertEqual(historical.skill_outputs, {})
+    def test_stored_output_fallback_remains_readable(self):
+        stored = WorkflowState.model_validate({"company_profile":{"company_name":"已有项目","industry":"制造业"},"agent_outputs":{"financial_quality_dividend":AgentOutput(agent_name="Financial Agent",summary="已保存财务结论").model_dump(mode="json")}})
+        self.assertEqual(stored.output_for("financial_quality_dividend").summary, "已保存财务结论")
+        self.assertEqual(stored.skill_outputs, {})
 
 
 if __name__ == "__main__": unittest.main()

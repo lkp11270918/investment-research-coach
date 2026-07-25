@@ -23,24 +23,13 @@ those results into evidence-linked `ResearchClaim` records. The Judge produces
 a `JudgeDecision` for every claim. Memo Writing receives only approved or
 downgraded claim text and cannot read unapproved Analyst prose.
 
-## Skill migration
+## Skill ownership
 
-| Historical Agent | New owner |
-|---|---|
-| Firm Doctrine & Case Retrieval | Planner context Skill |
-| Material Organizer | Evidence material-organization Skill |
-| Evidence Extractor | Evidence extraction capability |
-| Financial Quality & Dividend | Analyst Skill |
-| Business Model & Moat | Analyst Skill |
-| Management & View Comparison | Analyst Skill |
-| Value Trap & Contradiction | Red Team Skill |
-| Evidence & Compliance Gate | Judge plus deterministic hard gate |
-| Research Memo Generator | Memo Writing Skill |
-
-Historical runs retain their original `agent_outputs`. New runs publish only
-the four runtime Agent keys and store specialist results in `skill_outputs`.
-`WorkflowState.output_for()` reads both formats, so no account, project, Memo,
-evidence, Thesis, defense, or capability history is rewritten.
+- Planner owns doctrine context and company-specific research planning.
+- Evidence owns material organization, parsing, extraction, and graph updates.
+- Analyst owns financial, business-model, industry, management, and valuation Skills.
+- Judge owns counter-evidence review and semantic quality decisions.
+- The deterministic orchestrator owns hard gates, persistence, and Memo Writing.
 
 ## Behavioral release gate
 
@@ -51,7 +40,7 @@ The migration passes only when the same research package still produces:
 - financial, business-model, management/view, and valuation analysis;
 - counter-evidence, value-trap review, and pre/post Memo gates;
 - a gate-blocked or approved Memo with the same compliance behavior;
-- Review Mode findings, project history, and historical-run readability.
+- Review Mode findings and complete project history.
 
 Agent-key count alone is not acceptance. Industry-specific plans, missing-data
 skip behavior, the complete research lifecycle, TypeScript validation, and the

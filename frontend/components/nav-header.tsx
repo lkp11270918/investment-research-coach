@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { AuthUser } from '@/lib/api'
 
 interface NavHeaderProps {
@@ -12,6 +13,7 @@ interface NavHeaderProps {
   onLogin: () => void
   onSignup: () => void
   onLogout: () => void
+  onDeleteAccount: (password: string) => Promise<void>
 }
 
 export function NavHeader({
@@ -24,7 +26,36 @@ export function NavHeader({
   onLogin,
   onSignup,
   onLogout,
+  onDeleteAccount,
 }: NavHeaderProps) {
+  const [showAccountMenu, setShowAccountMenu] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const closeDeleteDialog = () => {
+    if (deleting) return
+    setShowDeleteDialog(false)
+    setDeletePassword('')
+    setDeleteConfirmation('')
+    setDeleteError(null)
+  }
+
+  const confirmDeleteAccount = async () => {
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await onDeleteAccount(deletePassword)
+      setShowDeleteDialog(false)
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : '账户删除失败')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const tabs = [
     { id: 'map', label: 'Research Map', disabled: false },
     { id: 'evidence', label: 'Evidence', disabled: false },
@@ -103,9 +134,13 @@ export function NavHeader({
           <div className="flex items-center gap-2 shrink-0">
             {isLoggedIn ? (
               <>
-                <div
-                  className="flex items-center gap-1.5 text-xs"
+                <button
+                  type="button"
+                  onClick={() => setShowAccountMenu(value => !value)}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-white/5"
                   style={{ color: 'oklch(0.55 0.01 240)' }}
+                  aria-expanded={showAccountMenu}
+                  aria-label="打开账户菜单"
                 >
                   <div
                     className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-semibold"
@@ -117,7 +152,25 @@ export function NavHeader({
                     {(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}
                   </div>
                   <span className="hidden lg:inline max-w-40 truncate">{user?.name || user?.email}</span>
-                </div>
+                </button>
+                {showAccountMenu && (
+                  <div className="absolute right-20 top-12 w-56 rounded-lg border border-border bg-card p-2 shadow-xl">
+                    <div className="border-b border-border px-2 py-2">
+                      <div className="truncate text-xs font-medium text-foreground">{user?.name || '当前账户'}</div>
+                      <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{user?.email}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAccountMenu(false)
+                        setShowDeleteDialog(true)
+                      }}
+                      className="mt-1 w-full rounded px-2 py-2 text-left text-xs text-destructive hover:bg-destructive/10"
+                    >
+                      删除账户
+                    </button>
+                  </div>
+                )}
                 <button
                   onClick={onLogout}
                   className="text-xs px-3 py-1.5 rounded-md border transition-colors"
@@ -163,6 +216,48 @@ export function NavHeader({
           </div>
         </div>
       </div>
+      {showDeleteDialog && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
+          <div className="w-full max-w-md rounded-xl border border-destructive/30 bg-card p-5 shadow-2xl">
+            <h2 id="delete-account-title" className="text-base font-semibold text-foreground">永久删除账户</h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              删除后，账户、研究项目、上传资料、证据、报告版本、答辩记录和能力画像将无法恢复。
+            </p>
+            <label className="mt-4 block text-xs font-medium text-foreground">
+              当前密码
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={event => setDeletePassword(event.target.value)}
+                className="mt-1.5 h-10 w-full rounded-md border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-destructive"
+              />
+            </label>
+            <label className="mt-3 block text-xs font-medium text-foreground">
+              输入“删除账户”确认
+              <input
+                value={deleteConfirmation}
+                onChange={event => setDeleteConfirmation(event.target.value)}
+                className="mt-1.5 h-10 w-full rounded-md border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-destructive"
+              />
+            </label>
+            {deleteError && <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">{deleteError}</div>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={closeDeleteDialog} disabled={deleting} className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteAccount}
+                disabled={deleting || !deletePassword || deleteConfirmation !== '删除账户'}
+                className="rounded-md bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-40"
+              >
+                {deleting ? '正在删除…' : '永久删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   )
 }
