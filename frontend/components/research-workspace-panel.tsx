@@ -48,7 +48,7 @@ interface ResearchWorkspacePanelProps {
   onLogin: () => void
   section?: 'map' | 'evidence' | 'thesis' | 'defense'
   onNewResearch?: () => void
-  onAddMaterials?: (projectId: string, company: { stockCode: string; companyName: string; industry: string }) => void
+  onAddMaterials?: (projectId: string, company: { stockCode: string; companyName: string; industry: string; outputLanguage?: 'auto' | 'zh' | 'en' }) => void
   onProjectChange?: (projectId: string) => void
 }
 
@@ -264,7 +264,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
         </div>
         <div className="flex items-center gap-2">
           {onNewResearch && <Button variant="outline" size="sm" onClick={onNewResearch}><Plus className="h-3.5 w-3.5" />新建研究</Button>}
-          {onAddMaterials && activeProject && <Button variant="outline" size="sm" onClick={() => onAddMaterials(activeProject.project_id, { stockCode: activeProject.company_profile.ticker || '', companyName: activeProject.company_profile.company_name, industry: activeProject.company_profile.industry })}><FileSearch className="h-3.5 w-3.5" />补充材料</Button>}
+          {onAddMaterials && activeProject && <Button variant="outline" size="sm" onClick={() => onAddMaterials(activeProject.project_id, { stockCode: activeProject.company_profile.ticker || '', companyName: activeProject.company_profile.company_name, industry: activeProject.company_profile.industry, outputLanguage: activeProject.company_profile.research_language || 'auto' })}><FileSearch className="h-3.5 w-3.5" />补充材料</Button>}
           {projects.length > 1 && (
             <select
               value={selectedProjectId}

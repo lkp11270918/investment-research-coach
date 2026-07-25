@@ -54,3 +54,13 @@ def language_instruction(language: Language) -> str:
 
 def is_english(language: Language) -> bool:
     return language == Language.EN
+
+
+def output_language_matches(text: str, language: Language) -> bool:
+    chinese = len(re.findall(r"[\u3400-\u9fff]", text))
+    english = len(re.findall(r"[A-Za-z]", text))
+    if language == Language.EN:
+        return chinese <= max(20, int(english * 0.08))
+    if language == Language.ZH:
+        return chinese > 0 or english < 40
+    return True

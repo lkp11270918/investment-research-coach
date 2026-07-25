@@ -114,11 +114,22 @@ def _validate_project_access(current_user: AuthUser | None, project_id: str | No
     if not project_belongs_to_user(current_user.user_id, project_id):
         raise HTTPException(status_code=404, detail="未找到该研究项目")
 
+def _reuse_project_language(current_user: AuthUser | None, request: AnalyzeRequest) -> None:
+    if not current_user or not request.project_id or request.company_profile.research_language.value != "auto":
+        return
+    project = get_research_project(current_user.user_id, request.project_id)
+    if project and project.project.company_profile.research_language.value in {"zh", "en"}:
+        request.company_profile.research_language = project.project.company_profile.research_language
+        request.company_profile.language_source = "project"
+
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 def analyze(request: AnalyzeRequest, current_user: AuthUser | None = Depends(get_optional_current_user)) -> AnalyzeResponse:
     _validate_project_access(current_user, request.project_id)
+    _reuse_project_language(current_user, request)
     state = run_analysis_workflow(request)
+    if current_user and request.project_id:
+        update_research_project(current_user.user_id, request.project_id, ResearchProjectUpdate(company_profile=state.company_profile))
     save_user_run(user_id=current_user.user_id if current_user else None, run_type="analysis", state=state, project_id=request.project_id)
     return AnalyzeResponse(run_id=state.run_id, status=state.workflow_status, state=state)
 
@@ -175,7 +186,10 @@ async def analyze_files(
     cross_check_multimodal_materials(request.materials)
 
     _validate_project_access(current_user, request.project_id)
+    _reuse_project_language(current_user, request)
     state = run_analysis_workflow(request)
+    if current_user and request.project_id:
+        update_research_project(current_user.user_id, request.project_id, ResearchProjectUpdate(company_profile=state.company_profile))
     save_user_run(user_id=current_user.user_id if current_user else None, run_type="analysis", state=state, project_id=request.project_id)
     return AnalyzeResponse(run_id=state.run_id, status=state.workflow_status, state=state)
 

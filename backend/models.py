@@ -566,7 +566,7 @@ class CompanyProfile(BaseModel):
     company_name: str
     industry: str
     market: str | None = None
-    research_language: Language = Language.ZH
+    research_language: Language = Language.AUTO
     language_source: str = "default"
     user_mode: UserMode = UserMode.TO_C
     institution_id: str | None = None

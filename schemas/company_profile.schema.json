@@ -22,8 +22,8 @@
     },
     "research_language": {
       "type": "string",
-      "enum": ["zh", "en"],
-      "default": "zh"
+      "enum": ["auto", "zh", "en"],
+      "default": "auto"
     },
     "user_mode": {
       "type": "string",

@@ -173,7 +173,11 @@ def run_memo_writing_skill(state: WorkflowState) -> ResearchMemo:
             body="\n".join(f"- {item}" for item in questions) or ("No new verification questions." if english else "当前没有新增待验证问题。")
             sections.append(MemoSection(section_id=section_id,title=title,body=body,confidence=Confidence.LOW,status="partial" if questions else "complete",summary=questions[0] if questions else body,missing_information=questions))
         elif section_id=="sources_disclaimer":
-            sources="\n".join(f"- {source.source_id}: {source.title} ({source.source_type.value})" for source in state.source_documents) or ("No source documents." if english else "无来源资料。")
+            sources=(
+                "\n".join(f"- {source.source_id}: {source.title} ({source.source_type.value})" for source in state.source_documents)
+                if english else
+                "\n".join(f"- {source.source_id}：{source.title}（{source.source_type.value}）" for source in state.source_documents)
+            ) or ("No source documents." if english else "无来源资料。")
             body=f"{sources}\n\n{disclaimer}"
             summary="Lists the sources used and states the research-training disclaimer." if english else "列示本次使用的来源并声明不构成投资建议。"
             sections.append(MemoSection(section_id=section_id,title=title,body=body,confidence=Confidence.HIGH,status="complete",summary=summary))

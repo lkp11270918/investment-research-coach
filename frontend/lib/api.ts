@@ -107,7 +107,8 @@ export type CompanyProfile = {
   company_name: string
   industry: string
   market?: string | null
-  research_language?: 'zh' | 'en'
+  research_language?: 'auto' | 'zh' | 'en'
+  language_source?: string
   user_mode?: 'to_c' | 'to_b'
 }
 
@@ -471,13 +472,14 @@ export async function analyzeCompany(input: {
   investmentHorizon?: string
   initialView?: string
   keyQuestion?: string
+  outputLanguage?: 'auto' | 'zh' | 'en'
 }): Promise<AnalyzeResult> {
   const companyProfile: CompanyProfile = {
     ticker: input.stockCode,
     company_name: input.companyName,
     industry: input.industry || '未指定行业',
     market: 'A股',
-    research_language: 'zh',
+    research_language: input.outputLanguage || 'auto',
     user_mode: 'to_c',
   }
   const textMaterials = input.materials
@@ -532,6 +534,7 @@ export async function reviewMemo(input: {
   memoText: string
   companyName?: string
   industry?: string
+  outputLanguage?: 'auto' | 'zh' | 'en'
 }): Promise<AnalyzeResult> {
   const response = await fetch(`${API_BASE_URL}/api/review`, {
     method: 'POST',
@@ -543,6 +546,7 @@ export async function reviewMemo(input: {
       company_profile: {
         company_name: input.companyName || '未指定公司',
         industry: input.industry || '未指定行业',
+        research_language: input.outputLanguage || 'auto',
         user_mode: 'to_c',
       },
       memo_text: input.memoText,

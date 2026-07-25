@@ -20,7 +20,7 @@ interface MaterialItem {
 
 interface InputPanelProps {
   projectId?: string | null
-  initialCompany?: { stockCode: string; companyName: string; industry: string } | null
+  initialCompany?: { stockCode: string; companyName: string; industry: string; outputLanguage?: 'auto' | 'zh' | 'en' } | null
   onStartAnalysis: (data: {
     stockCode: string
     companyName: string
@@ -30,6 +30,7 @@ interface InputPanelProps {
     investmentHorizon: string
     initialView: string
     keyQuestion: string
+    outputLanguage: 'auto' | 'zh' | 'en'
     materials: MaterialItem[]
   }) => void
 }
@@ -92,6 +93,7 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
   const [investmentHorizon, setInvestmentHorizon] = useState('3-5年')
   const [initialView, setInitialView] = useState('')
   const [keyQuestion, setKeyQuestion] = useState('')
+  const [outputLanguage, setOutputLanguage] = useState<'auto' | 'zh' | 'en'>(initialCompany?.outputLanguage || 'auto')
   const [activeType, setActiveType] = useState<string | null>('financial')
   const [materialContents, setMaterialContents] = useState<Record<string, string>>({})
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, File[]>>({})
@@ -177,7 +179,7 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
       publisher: urlMetadata[m.id]?.publisher,
       publishedAt: urlMetadata[m.id]?.publishedAt,
     }))
-    onStartAnalysis({ stockCode, companyName, industry, projectId, researchObjective, investmentHorizon, initialView, keyQuestion, materials })
+    onStartAnalysis({ stockCode, companyName, industry, projectId, researchObjective, investmentHorizon, initialView, keyQuestion, outputLanguage, materials })
   }
 
   return (
@@ -234,6 +236,19 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
               </div>
               <div><label className="text-xs text-muted-foreground mb-1.5 block">初步判断</label><Textarea value={initialView} onChange={e => setInitialView(e.target.value)} placeholder="写下当前判断，后续系统会主动寻找反证" className="min-h-20 bg-input text-sm" /></div>
               <div><label className="text-xs text-muted-foreground mb-1.5 block">最想验证的问题</label><Textarea value={keyQuestion} onChange={e => setKeyQuestion(e.target.value)} placeholder="例：资本开支是否会侵蚀自由现金流？" className="min-h-20 bg-input text-sm" /></div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">输出语言</label>
+                <select
+                  value={outputLanguage}
+                  onChange={event => setOutputLanguage(event.target.value as 'auto' | 'zh' | 'en')}
+                  className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="auto">自动识别</option>
+                  <option value="zh">中文</option>
+                  <option value="en">English</option>
+                </select>
+                <div className="mt-1 text-[10px] text-muted-foreground">自动识别优先参考核心问题和研究目标；项目创建后保持一致。</div>
+              </div>
             </div>
 
             {/* Quick select */}

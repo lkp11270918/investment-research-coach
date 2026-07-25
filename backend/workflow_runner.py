@@ -27,7 +27,7 @@ from .llm_agents import (
     run_value_trap_contradiction_llm,
 )
 from .llm_client import OpenAIClient, collected_usage, start_usage_tracking
-from .localization import is_english, resolve_language
+from .localization import is_english, output_language_matches, resolve_language
 from .memo_writing import run_memo_writing_skill
 from .model_pipeline import execute_model_pipeline
 from .models import AgentFinding, AgentOutput, AgentStatus, AnalyzeRequest, Confidence, ResearchClaim, ReviewRequest, SkillResult, WorkflowState, WorkflowStopAfter
@@ -271,6 +271,13 @@ def run_analysis_workflow(request: AnalyzeRequest) -> WorkflowState:
     if _stop(request,WorkflowStopAfter.MEMO): return _save(state,main)
     if not request.options.skip_post_gate:
         state.post_memo_gate=run_compliance_gate_llm(state,"post_memo_gate",state.memo)
+        if state.memo and not output_language_matches(state.memo.markdown, state.company_profile.research_language):
+            state.post_memo_gate.status="fail"
+            state.post_memo_gate.compliance_warnings.append(
+                "Generated output does not consistently match the selected language."
+                if is_english(state.company_profile.research_language)
+                else "生成内容与所选输出语言不一致。"
+            )
         if state.post_memo_gate.status=="fail" and state.workflow_status=="completed": state.workflow_status="needs_revision"
     _sync_graph(state)
     state.current_stage=WorkflowStopAfter.POST_MEMO_GATE.value

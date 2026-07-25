@@ -24,7 +24,7 @@ export default function Page() {
   const [activeTab, setActiveTab] = useState('map')
   const [showIntake, setShowIntake] = useState(true)
   const [intakeProjectId, setIntakeProjectId] = useState<string | null>(null)
-  const [intakeCompany, setIntakeCompany] = useState<{ stockCode: string; companyName: string; industry: string } | null>(null)
+  const [intakeCompany, setIntakeCompany] = useState<{ stockCode: string; companyName: string; industry: string; outputLanguage?: 'auto' | 'zh' | 'en' } | null>(null)
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalyzeResult | null>(null)
   const [memo, setMemo] = useState<BackendMemo | null>(null)
@@ -91,6 +91,7 @@ export default function Page() {
     investmentHorizon: string
     initialView: string
     keyQuestion: string
+    outputLanguage: 'auto' | 'zh' | 'en'
     materials: AnalysisData['materials']
   }) => {
     setMemo(null)

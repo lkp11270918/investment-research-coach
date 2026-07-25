@@ -15,6 +15,7 @@ export interface AnalysisData {
   investmentHorizon?: string
   initialView?: string
   keyQuestion?: string
+  outputLanguage?: 'auto' | 'zh' | 'en'
 }
 
 interface AgentStep {
