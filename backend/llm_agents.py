@@ -13,6 +13,7 @@ from .agents import run_research_memo_generator as run_stub_research_memo_genera
 from .agents import run_value_trap_contradiction as run_stub_value_trap_contradiction
 from .financial_parser import expected_financial_metric_names, extract_structured_financial_evidence
 from .llm_client import LLMError, OpenAIClient
+from .localization import language_instruction
 from .model_pipeline import classify_material, classify_statement
 from .value_investing_doctrine import doctrine_text
 from .models import (
@@ -644,7 +645,7 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
 
     try:
         result = client.generate_json(
-            system_prompt=MATERIAL_ORGANIZER_PROMPT,
+            system_prompt=f"{MATERIAL_ORGANIZER_PROMPT}\n\n{language_instruction(state.company_profile.research_language)}",
             user_payload={
                 "company_profile": state.company_profile.model_dump(mode="json"),
                 "materials": [
@@ -718,7 +719,7 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
 
     try:
         result = client.generate_json(
-            system_prompt=EVIDENCE_EXTRACTOR_PROMPT,
+            system_prompt=f"{EVIDENCE_EXTRACTOR_PROMPT}\n\n{language_instruction(state.company_profile.research_language)}",
             user_payload={
                 "company_profile": state.company_profile.model_dump(mode="json"),
                 "source_documents": [
@@ -850,7 +851,7 @@ def run_financial_quality_dividend_llm(state: WorkflowState, client: OpenAIClien
 
     try:
         result = client.generate_json(
-            system_prompt=FINANCIAL_QUALITY_PROMPT,
+            system_prompt=f"{FINANCIAL_QUALITY_PROMPT}\n\n{language_instruction(state.company_profile.research_language)}",
             user_payload={
                 "company_profile": state.company_profile.model_dump(mode="json"),
                 "evidence_items": [
@@ -985,7 +986,7 @@ def run_business_model_moat_llm(state: WorkflowState, client: OpenAIClient | Non
 
     try:
         result = client.generate_json(
-            system_prompt=BUSINESS_MODEL_PROMPT,
+            system_prompt=f"{BUSINESS_MODEL_PROMPT}\n\n{language_instruction(state.company_profile.research_language)}",
             user_payload={
                 "company_profile": state.company_profile.model_dump(mode="json"),
                 "evidence_items": [
@@ -1084,7 +1085,7 @@ def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClien
 
     try:
         result = client.generate_json(
-            system_prompt=MANAGEMENT_VIEW_PROMPT,
+            system_prompt=f"{MANAGEMENT_VIEW_PROMPT}\n\n{language_instruction(state.company_profile.research_language)}",
             user_payload={
                 "company_profile": state.company_profile.model_dump(mode="json"),
                 "evidence_items": [
@@ -1173,7 +1174,7 @@ def run_value_trap_contradiction_llm(state: WorkflowState, client: OpenAIClient 
 
     try:
         result = client.generate_json(
-            system_prompt=VALUE_TRAP_PROMPT,
+            system_prompt=f"{VALUE_TRAP_PROMPT}\n\n{language_instruction(state.company_profile.research_language)}",
             user_payload={
                 "company_profile": state.company_profile.model_dump(mode="json"),
                 "evidence_items": [
@@ -1263,7 +1264,7 @@ def run_research_coach_review_llm(
 
     try:
         result = client.generate_json(
-            system_prompt=RESEARCH_COACH_REVIEW_PROMPT,
+            system_prompt=f"{RESEARCH_COACH_REVIEW_PROMPT}\n\n{language_instruction(state.company_profile.research_language)}",
             user_payload={
                 "company_profile": state.company_profile.model_dump(mode="json"),
                 "user_mode": state.company_profile.user_mode.value,
@@ -1395,7 +1396,7 @@ def run_compliance_gate_llm(
 
     try:
         result = client.generate_json(
-            system_prompt=COMPLIANCE_GATE_PROMPT,
+            system_prompt=f"{COMPLIANCE_GATE_PROMPT}\n\n{language_instruction(state.company_profile.research_language)}",
             user_payload={
                 "gate_name": gate_name,
                 "company_profile": state.company_profile.model_dump(mode="json"),
@@ -1491,7 +1492,7 @@ def run_research_memo_generator_llm(state: WorkflowState, client: OpenAIClient |
 
     try:
         result = client.generate_json(
-            system_prompt=MEMO_GENERATOR_PROMPT,
+            system_prompt=f"{MEMO_GENERATOR_PROMPT}\n\n{language_instruction(state.company_profile.research_language)}",
             user_payload={
                 "company_profile": state.company_profile.model_dump(mode="json"),
                 "user_mode": state.company_profile.user_mode.value,

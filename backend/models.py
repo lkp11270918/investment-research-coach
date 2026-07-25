@@ -14,6 +14,7 @@ class UserMode(str, Enum):
 
 
 class Language(str, Enum):
+    AUTO = "auto"
     ZH = "zh"
     EN = "en"
 
@@ -566,6 +567,7 @@ class CompanyProfile(BaseModel):
     industry: str
     market: str | None = None
     research_language: Language = Language.ZH
+    language_source: str = "default"
     user_mode: UserMode = UserMode.TO_C
     institution_id: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

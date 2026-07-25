@@ -5,6 +5,7 @@ import json
 
 from .agent_architecture import build_research_plan
 from .llm_client import LLMError, OpenAIClient
+from .localization import is_english, language_instruction
 from .models import AgentFinding, AgentOutput, AgentStatus, Confidence, JudgeDecision, ResearchClaim, ResearchExecutionPlan, SkillResult, SourceType, WorkflowState
 from .value_investing_doctrine import doctrine_text
 
@@ -82,6 +83,7 @@ def _structured_business_claims(results: list[SkillResult]) -> list[ResearchClai
 
 def run_planner_agent(state: WorkflowState, objective: str | None = None, horizon: str | None = None, initial_view: str | None = None, key_question: str | None = None, client: OpenAIClient | None = None) -> tuple[ResearchExecutionPlan, AgentOutput]:
     fallback = build_research_plan(state)
+    english = is_english(state.company_profile.research_language)
     focus=" ".join(filter(None,[objective,key_question]))
     if focus:
         industry_skills=[item for item in fallback.required_skills if item.endswith("_analysis")]
@@ -93,13 +95,15 @@ def run_planner_agent(state: WorkflowState, objective: str | None = None, horizo
         fallback.skipped_skills=sorted(ALLOWED_SKILLS-set(fallback.required_skills))
         fallback.parallel_groups=[fallback.required_skills]
         fallback.minimum_evidence={item:1 for item in fallback.required_skills}
-        fallback.priority_questions=[key_question] if key_question else [f"研究目标：{objective}",*fallback.priority_questions]
+        fallback.priority_questions=[key_question] if key_question else [f"Research objective: {objective}" if english else f"研究目标：{objective}",*fallback.priority_questions]
     client = client or OpenAIClient()
     if client.available:
         try:
             result = client.generate_json(system_prompt=f"""You are the Research Planner Agent. Decide WHAT to research, never execute tools or write conclusions. Return JSON with company_type, research_questions, required_skills, skipped_skills, dependencies, parallel_groups, minimum_evidence, missing_materials, priorities, replan_triggers, rationale. required_skills may only use the supplied allowed_skills. Different industries and objectives must produce materially different execution plans. The plan must cover every supplied value-investing principle that is material to this company and must not equate low valuation or high dividend with safety.
 
-{doctrine_text()}""", user_payload={"company":state.company_profile.model_dump(mode="json"),"objective":objective,"horizon":horizon,"initial_view":initial_view,"key_question":key_question,"materials":[{"type":m.source_type.value,"title":m.title,"has_content":bool(m.content)} for m in state.raw_materials],"allowed_skills":sorted(ALLOWED_SKILLS)}, temperature=0)
+{doctrine_text()}
+
+{language_instruction(state.company_profile.research_language)}""", user_payload={"company":state.company_profile.model_dump(mode="json"),"objective":objective,"horizon":horizon,"initial_view":initial_view,"key_question":key_question,"materials":[{"type":m.source_type.value,"title":m.title,"has_content":bool(m.content)} for m in state.raw_materials],"allowed_skills":sorted(ALLOWED_SKILLS)}, temperature=0)
             if not isinstance(result,dict): raise TypeError("planner response must be an object")
             fallback_industry=next((item for item in fallback.required_skills if item in INDUSTRY_SKILLS),"general_business_analysis")
             required=[item for item in result.get("required_skills",[]) if item in ALLOWED_SKILLS and (item not in INDUSTRY_SKILLS or item==fallback_industry)]
@@ -121,8 +125,9 @@ def run_planner_agent(state: WorkflowState, objective: str | None = None, horizo
                 fallback.planner_model=client.settings.openai_model
         except (LLMError, TimeoutError, OSError, TypeError, ValueError):
             pass
-    finding=AgentFinding(title="研究问题树",detail="；".join(fallback.priority_questions),classification="research_plan",confidence=Confidence.MEDIUM)
-    output=AgentOutput(agent_name="Research Planner Agent",status=AgentStatus.PASS if fallback.required_skills else AgentStatus.PARTIAL,summary=f"计划执行 {len(fallback.required_skills)} 个 Skills，跳过 {len(fallback.skipped_skills)} 个。",findings=[finding],missing_materials=fallback.missing_materials,confidence=Confidence.MEDIUM)
+    finding=AgentFinding(title="Research Question Tree" if english else "研究问题树",detail=("; " if english else "；").join(fallback.priority_questions),classification="research_plan",confidence=Confidence.MEDIUM)
+    summary=(f"Planned {len(fallback.required_skills)} Skills and skipped {len(fallback.skipped_skills)}." if english else f"计划执行 {len(fallback.required_skills)} 个 Skills，跳过 {len(fallback.skipped_skills)} 个。")
+    output=AgentOutput(agent_name="Research Planner Agent",status=AgentStatus.PASS if fallback.required_skills else AgentStatus.PARTIAL,summary=summary,findings=[finding],missing_materials=fallback.missing_materials,confidence=Confidence.MEDIUM)
     return fallback,output
 
 
@@ -132,6 +137,7 @@ def to_skill_result(skill_id: str, output: AgentOutput, fingerprint_payload: obj
 
 
 def run_analyst_agent(state: WorkflowState, client: OpenAIClient | None = None) -> tuple[list[ResearchClaim],AgentOutput]:
+    english=is_english(state.company_profile.research_language)
     skill_results=[item for item in state.skill_outputs.values() if isinstance(item,SkillResult) and item.skill_id in ALLOWED_SKILLS]
     claims=_fallback_claims(skill_results)
     client=client or OpenAIClient()
@@ -139,7 +145,9 @@ def run_analyst_agent(state: WorkflowState, client: OpenAIClient | None = None) 
         try:
             result=client.generate_json(system_prompt=f"""You are the Research Analyst Agent. Synthesize Skill results into non-duplicative buy-side ResearchClaims. Reconcile conflicts instead of concatenating text. Every claim needs topic, statement, claim_type, supporting_evidence_ids, counter_evidence_ids, assumptions, scenarios, confidence, falsification_conditions, source_skill_ids, topics, primary_section and secondary_sections. primary_section must be one of: {", ".join(sorted(MEMO_SECTIONS))}. Use only supplied evidence IDs and Skill content. Apply the supplied value-investing doctrine as a reasoning constraint; never treat low valuation, high dividend, high ROE, management targets, or sell-side consensus as sufficient conclusions.
 
-{doctrine_text()}""",user_payload={"plan":state.research_plan.model_dump(mode="json") if state.research_plan else None,"doctrine_context":state.skill_outputs.get("doctrine_context").model_dump(mode="json") if state.skill_outputs.get("doctrine_context") else None,"skills":[item.model_dump(mode="json") for item in skill_results]},temperature=0)
+{doctrine_text()}
+
+{language_instruction(state.company_profile.research_language)}""",user_payload={"plan":state.research_plan.model_dump(mode="json") if state.research_plan else None,"doctrine_context":state.skill_outputs.get("doctrine_context").model_dump(mode="json") if state.skill_outputs.get("doctrine_context") else None,"skills":[item.model_dump(mode="json") for item in skill_results]},temperature=0)
             if not isinstance(result,dict): raise TypeError("analyst response must be an object")
             parsed=[]; valid_evidence={item.evidence_id for item in state.evidence_items}; valid_skills={item.skill_id for item in skill_results}
             for raw in result.get("claims",[])[:30]:
@@ -152,7 +160,8 @@ def run_analyst_agent(state: WorkflowState, client: OpenAIClient | None = None) 
     claims=[item for item in claims if not (item.source_skill_ids==["business_model_moat"] and _route_claim(item).primary_section in structured_sections)]
     claims=[_route_claim(item) for item in [*claims,*structured]]
     findings=[AgentFinding(title=c.topic,detail=c.statement,classification=c.claim_type,evidence_ids=c.supporting_evidence_ids,confidence=c.confidence) for c in claims]
-    return claims,AgentOutput(agent_name="Research Analyst Agent",status=AgentStatus.PASS if claims else AgentStatus.PARTIAL,summary=f"综合形成 {len(claims)} 条可审查 Research Claims。",findings=findings,confidence=Confidence.MEDIUM if claims else Confidence.LOW)
+    summary=f"Synthesized {len(claims)} reviewable Research Claims." if english else f"综合形成 {len(claims)} 条可审查 Research Claims。"
+    return claims,AgentOutput(agent_name="Research Analyst Agent",status=AgentStatus.PASS if claims else AgentStatus.PARTIAL,summary=summary,findings=findings,confidence=Confidence.MEDIUM if claims else Confidence.LOW)
 
 
 def _fallback_claims(results: list[SkillResult]) -> list[ResearchClaim]:
@@ -165,6 +174,7 @@ def _fallback_claims(results: list[SkillResult]) -> list[ResearchClaim]:
 
 
 def run_judge_agent(state: WorkflowState, hard_gate_status: str, client: OpenAIClient | None = None) -> tuple[list[JudgeDecision],AgentOutput]:
+    english=is_english(state.company_profile.research_language)
     valid={item.evidence_id:item for item in state.evidence_items}; decisions=[]
     for claim in state.research_claims:
         unsupported=not claim.supporting_evidence_ids or any(eid not in valid for eid in claim.supporting_evidence_ids)
@@ -174,22 +184,24 @@ def run_judge_agent(state: WorkflowState, hard_gate_status: str, client: OpenAIC
         forbidden=state.company_profile.user_mode.value=="to_c" and any(word in claim.statement for word in ("买入","卖出","增持","减持","目标价","必涨","稳赚"))
         doctrine_mismatch=any(pattern in claim.statement.replace(" ", "") for pattern in ("低PE就是安全边际","低PB就是安全边际","低估值就是安全边际","高股息就是安全","高分红就是安全","高ROE就是优秀公司"))
         if forbidden:
-            decision="rejected"; approved=None; reason="To C 结论包含评级、目标价或确定性交易表达。"
+            decision="rejected"; approved=None; reason="The To C conclusion contains a rating, target price, or deterministic trading language." if english else "To C 结论包含评级、目标价或确定性交易表达。"
         elif doctrine_mismatch:
-            decision="rejected"; approved=None; reason="结论违反通用价值投资准则，把单一估值、股息或ROE指标直接等同于安全或质量。"
+            decision="rejected"; approved=None; reason="The conclusion violates value-investing principles by equating a single valuation, dividend, or ROE metric with safety or quality." if english else "结论违反通用价值投资准则，把单一估值、股息或ROE指标直接等同于安全或质量。"
         elif hard_gate_status=="fail" or unsupported or unverified:
-            decision="needs_evidence"; approved=None; reason="缺少已核验支持证据或硬门禁未通过。"
+            decision="needs_evidence"; approved=None; reason="Verified supporting evidence is missing or a hard gate failed." if english else "缺少已核验支持证据或硬门禁未通过。"
         elif claim.claim_type in {"opinion","assumption"} or opinion_only:
-            decision="downgraded"; approved=f"当前资料中的观点或待验证假设：{claim.statement}"; reason="不得将观点或假设写成已发生事实。"
+            decision="downgraded"; approved=(f"Opinion or unverified assumption in the available materials: {claim.statement}" if english else f"当前资料中的观点或待验证假设：{claim.statement}"); reason="Opinions and assumptions must not be presented as established facts." if english else "不得将观点或假设写成已发生事实。"
         else:
-            decision="approved"; approved=claim.statement; reason="有已核验证据支持且未触发硬门禁。"
-        decisions.append(JudgeDecision(claim_id=claim.claim_id,decision=decision,reason=reason,approved_statement=approved,missing_evidence=[] if approved else ["可核验的一手证据"]))
+            decision="approved"; approved=claim.statement; reason="Supported by verified evidence and no hard gate was triggered." if english else "有已核验证据支持且未触发硬门禁。"
+        decisions.append(JudgeDecision(claim_id=claim.claim_id,decision=decision,reason=reason,approved_statement=approved,missing_evidence=[] if approved else (["Verifiable primary evidence"] if english else ["可核验的一手证据"])))
     client=client or OpenAIClient()
     if client.available and decisions:
         try:
             result=client.generate_json(system_prompt=f"""You are the Red Team & Judge Agent. Review each ResearchClaim for unsupported conclusions, management targets treated as facts, sell-side forecasts treated as outcomes, selective citation, value traps, doctrine violations, and compliance. Return decisions with claim_id, decision, reason, approved_statement, missing_evidence. You may only keep or make the deterministic decision stricter; never approve a deterministically rejected/needs_evidence claim.
 
-{doctrine_text()}""",user_payload={"claims":[item.model_dump(mode="json") for item in state.research_claims],"deterministic_decisions":[item.model_dump(mode="json") for item in decisions],"doctrine_context":state.skill_outputs.get("doctrine_context").model_dump(mode="json") if state.skill_outputs.get("doctrine_context") else None,"evidence":[{"id":item.evidence_id,"category":item.category.value,"statement":item.statement,"status":item.verification_status.value} for item in state.evidence_items]},temperature=0)
+{doctrine_text()}
+
+{language_instruction(state.company_profile.research_language)}""",user_payload={"claims":[item.model_dump(mode="json") for item in state.research_claims],"deterministic_decisions":[item.model_dump(mode="json") for item in decisions],"doctrine_context":state.skill_outputs.get("doctrine_context").model_dump(mode="json") if state.skill_outputs.get("doctrine_context") else None,"evidence":[{"id":item.evidence_id,"category":item.category.value,"statement":item.statement,"status":item.verification_status.value} for item in state.evidence_items]},temperature=0)
             if not isinstance(result,dict): raise TypeError("judge response must be an object")
             rank={"approved":0,"downgraded":1,"needs_recalculation":2,"needs_evidence":3,"rejected":4}; by_id={item.claim_id:item for item in decisions}
             for raw in result.get("decisions",[]):
@@ -201,4 +213,6 @@ def run_judge_agent(state: WorkflowState, hard_gate_status: str, client: OpenAIC
         except (LLMError,TimeoutError,OSError,TypeError,ValueError): pass
     findings=[AgentFinding(title=d.decision,detail=f"{d.claim_id}：{d.reason}",classification="quality_gate",confidence=Confidence.HIGH) for d in decisions]
     passed=any(d.decision in {"approved","downgraded"} for d in decisions) and hard_gate_status=="pass"
-    return decisions,AgentOutput(agent_name="Red Team & Judge Agent",status=AgentStatus.PASS if passed else AgentStatus.FAIL,summary=f"审查 {len(decisions)} 条 Claim，允许 {sum(d.decision in {'approved','downgraded'} for d in decisions)} 条进入 Memo。",findings=findings,confidence=Confidence.HIGH)
+    allowed=sum(d.decision in {"approved","downgraded"} for d in decisions)
+    summary=f"Reviewed {len(decisions)} Claims; {allowed} may enter the Memo." if english else f"审查 {len(decisions)} 条 Claim，允许 {allowed} 条进入 Memo。"
+    return decisions,AgentOutput(agent_name="Red Team & Judge Agent",status=AgentStatus.PASS if passed else AgentStatus.FAIL,summary=summary,findings=findings,confidence=Confidence.HIGH)

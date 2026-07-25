@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .llm_client import LLMError, OpenAIClient
+from .localization import is_english, language_instruction
 from .models import (
     AgentFinding,
     AgentOutput,
@@ -65,6 +66,7 @@ def _matching_evidence(state: WorkflowState, terms: tuple[str, ...]):
 
 def _fallback_output(state: WorkflowState, skill_id: str) -> AgentOutput:
     spec = INDUSTRY_SPECS[skill_id]
+    english = is_english(state.company_profile.research_language)
     driver_evidence = _matching_evidence(state, spec.drivers)
     risk_evidence = _matching_evidence(state, spec.risks)
     covered = {
@@ -81,7 +83,7 @@ def _fallback_output(state: WorkflowState, skill_id: str) -> AgentOutput:
     if driver_evidence:
         findings.append(
             AgentFinding(
-                title=f"{spec.label}核心经营驱动",
+                title="Core Operating Drivers" if english else f"{spec.label}核心经营驱动",
                 detail="；".join(item.statement for item in driver_evidence[:5]),
                 classification="fact_based",
                 evidence_ids=[item.evidence_id for item in driver_evidence[:5]],
@@ -91,7 +93,7 @@ def _fallback_output(state: WorkflowState, skill_id: str) -> AgentOutput:
     if risk_evidence:
         findings.append(
             AgentFinding(
-                title=f"{spec.label}行业风险信号",
+                title="Industry Risk Signals" if english else f"{spec.label}行业风险信号",
                 detail="；".join(item.statement for item in risk_evidence[:5]),
                 classification="risk",
                 evidence_ids=[item.evidence_id for item in risk_evidence[:5]],
@@ -101,8 +103,8 @@ def _fallback_output(state: WorkflowState, skill_id: str) -> AgentOutput:
     if not findings:
         findings.append(
             AgentFinding(
-                title=f"{spec.label}分析资料不足",
-                detail=f"当前证据未覆盖{spec.label}核心变量，不能形成行业经营判断。",
+                title="Insufficient Industry Evidence" if english else f"{spec.label}分析资料不足",
+                detail=f"The available evidence does not cover the core {spec.label} variables; no industry operating conclusion can be formed." if english else f"当前证据未覆盖{spec.label}核心变量，不能形成行业经营判断。",
                 classification="missing_data",
                 confidence=Confidence.LOW,
             )
@@ -110,10 +112,10 @@ def _fallback_output(state: WorkflowState, skill_id: str) -> AgentOutput:
     return AgentOutput(
         agent_name=f"{spec.label} Analysis Skill",
         status=AgentStatus.PARTIAL if findings else AgentStatus.FAIL,
-        summary=f"已按{spec.label}专属指标检查当前证据；模型不可用，结果为规则降级分析。",
+        summary=f"Reviewed the evidence using {spec.label}-specific metrics; the model was unavailable, so this is a rule-based degraded analysis." if english else f"已按{spec.label}专属指标检查当前证据；模型不可用，结果为规则降级分析。",
         findings=findings,
         missing_materials=missing,
-        warnings=["行业深度模型未运行，当前结果已明确降级。"],
+        warnings=["The industry analysis model did not run; the result is explicitly degraded."] if english else ["行业深度模型未运行，当前结果已明确降级。"],
         confidence=Confidence.LOW,
     )
 
@@ -145,6 +147,8 @@ missing_materials，不得输出空泛的行业模板。
 findings 每项包含 title, detail, classification, evidence_ids, confidence。
 
 {doctrine_text()}
+
+{language_instruction(state.company_profile.research_language)}
 """.strip()
     try:
         result = client.generate_json(

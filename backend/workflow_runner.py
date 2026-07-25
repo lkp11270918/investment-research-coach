@@ -27,6 +27,7 @@ from .llm_agents import (
     run_value_trap_contradiction_llm,
 )
 from .llm_client import OpenAIClient, collected_usage, start_usage_tracking
+from .localization import is_english, resolve_language
 from .memo_writing import run_memo_writing_skill
 from .model_pipeline import execute_model_pipeline
 from .models import AgentFinding, AgentOutput, AgentStatus, AnalyzeRequest, Confidence, ResearchClaim, ReviewRequest, SkillResult, WorkflowState, WorkflowStopAfter
@@ -168,7 +169,17 @@ def _execute_planned_skills(
 
 
 def run_analysis_workflow(request: AnalyzeRequest) -> WorkflowState:
-    start_usage_tracking(); state=WorkflowState(company_profile=request.company_profile,raw_materials=request.materials); main={}
+    start_usage_tracking()
+    language, source = resolve_language(
+        request.company_profile.research_language,
+        key_question=request.key_question,
+        research_objective=request.research_objective,
+        initial_view=request.initial_view,
+        materials=(item.content for item in request.materials),
+    )
+    request.company_profile.research_language = language
+    request.company_profile.language_source = source
+    state=WorkflowState(company_profile=request.company_profile,raw_materials=request.materials); main={}
     record_event(state,"planning","running")
     state.research_plan,main["research_planner"]=run_planner_agent(state,request.research_objective,request.investment_horizon,request.initial_view,request.key_question)
     doctrine=run_firm_doctrine_case_retrieval(state)
@@ -189,7 +200,8 @@ def run_analysis_workflow(request: AnalyzeRequest) -> WorkflowState:
     state.processing_records=execute_model_pipeline(state.raw_materials,state.evidence_items); _financials(state)
     _sync_graph(state,semantic=True)
     evidence_findings=[*organizer.findings,*extractor.findings]
-    main["evidence"]=AgentOutput(agent_name="Evidence Agent",status=AgentStatus.PASS if state.evidence_items else AgentStatus.FAIL,summary=f"建立 {len(state.evidence_items)} 条可追溯证据。",findings=evidence_findings,missing_materials=list(dict.fromkeys([*organizer.missing_materials,*extractor.missing_materials])),confidence=Confidence.MEDIUM if state.evidence_items else Confidence.LOW)
+    evidence_summary = f"Built {len(state.evidence_items)} traceable evidence items." if is_english(language) else f"建立 {len(state.evidence_items)} 条可追溯证据。"
+    main["evidence"]=AgentOutput(agent_name="Evidence Agent",status=AgentStatus.PASS if state.evidence_items else AgentStatus.FAIL,summary=evidence_summary,findings=evidence_findings,missing_materials=list(dict.fromkeys([*organizer.missing_materials,*extractor.missing_materials])),confidence=Confidence.MEDIUM if state.evidence_items else Confidence.LOW)
     record_event(state,"evidence","completed",main["evidence"].summary)
     state.current_stage=WorkflowStopAfter.EVIDENCE_EXTRACTOR.value
     if _stop(request,WorkflowStopAfter.EVIDENCE_EXTRACTOR): return _save(state,main)
@@ -270,8 +282,15 @@ def run_review_workflow(request: ReviewRequest) -> WorkflowState:
     start_usage_tracking()
     if request.company_profile is None:
         from .models import CompanyProfile,UserMode
-        profile=CompanyProfile(company_name="未指定公司",industry="未指定行业",user_mode=UserMode.TO_C)
+        profile=CompanyProfile(company_name="未指定公司",industry="未指定行业",user_mode=UserMode.TO_C, research_language="auto")
     else: profile=request.company_profile
+    language, source = resolve_language(
+        profile.research_language,
+        key_question=request.memo_text,
+        materials=(item.content for item in request.materials),
+    )
+    profile.research_language = language
+    profile.language_source = source
     state=WorkflowState(company_profile=profile,raw_materials=request.materials); plan,planner=run_planner_agent(state)
     state.research_plan=plan; doctrine=run_firm_doctrine_case_retrieval(state); organizer=_retry_model_fallback(run_material_organizer_llm,state,run_material_organizer_llm(state)); extractor=_retry_model_fallback(run_evidence_extractor_llm,state,run_evidence_extractor_llm(state))
     organizer_mode,organizer_model=_execution_metadata("material_organization",organizer)
@@ -279,5 +298,6 @@ def run_review_workflow(request: ReviewRequest) -> WorkflowState:
     state.processing_records=execute_model_pipeline(state.raw_materials,state.evidence_items); _financials(state)
     _sync_graph(state,semantic=True)
     review=run_research_coach_review_llm(request.memo_text,state); review_mode,review_model=_execution_metadata("research_coach_review",review); state.skill_outputs["research_coach_review"]=to_skill_result("research_coach_review",review,{"memo":request.memo_text},execution_mode=review_mode,model_name=review_model)
-    main={"research_planner":planner,"evidence":AgentOutput(agent_name="Evidence Agent",status=AgentStatus.PASS if state.evidence_items else AgentStatus.PARTIAL,summary=f"建立 {len(state.evidence_items)} 条批改证据。",confidence=Confidence.MEDIUM),"research_analyst":AgentOutput(agent_name="Research Analyst Agent",status=AgentStatus.PASS,summary="已将用户 Memo 拆解为待审查研究表达。",confidence=Confidence.MEDIUM),"red_team_judge":AgentOutput(agent_name="Red Team & Judge Agent",status=review.status,summary=review.summary,findings=review.findings,missing_materials=review.missing_materials,warnings=review.warnings,confidence=review.confidence)}
+    english = is_english(language)
+    main={"research_planner":planner,"evidence":AgentOutput(agent_name="Evidence Agent",status=AgentStatus.PASS if state.evidence_items else AgentStatus.PARTIAL,summary=f"Built {len(state.evidence_items)} evidence items for review." if english else f"建立 {len(state.evidence_items)} 条批改证据。",confidence=Confidence.MEDIUM),"research_analyst":AgentOutput(agent_name="Research Analyst Agent",status=AgentStatus.PASS,summary="Converted the user memo into reviewable research statements." if english else "已将用户 Memo 拆解为待审查研究表达。",confidence=Confidence.MEDIUM),"red_team_judge":AgentOutput(agent_name="Red Team & Judge Agent",status=review.status,summary=review.summary,findings=review.findings,missing_materials=review.missing_materials,warnings=review.warnings,confidence=review.confidence)}
     _publish(state,main); _sync_graph(state); return _save(state,main)
