@@ -23,6 +23,7 @@ from .models import (
     VerificationStatus,
     WorkflowState,
 )
+from .memo_chapters import MEMO_CHAPTERS, MemoChapter, score_memo_chapter_coverage
 
 
 DISCLAIMER_ZH = (
@@ -551,41 +552,35 @@ def run_research_memo_generator(state: WorkflowState) -> ResearchMemo:
         warnings = f"\n\n注意事项：{'; '.join(output.warnings)}" if output.warnings else ""
         return f"{output.summary}{missing}{warnings}"
 
+    bodies = {
+        MemoChapter.COMPANY_INFO.value: f"公司：{state.company_profile.company_name}；代码：{state.company_profile.ticker or '未提供'}；行业：{state.company_profile.industry}。",
+        MemoChapter.SCOPE_DOCTRINE_CONFIDENCE.value: f"当前基于用户提供的 {len(state.source_documents)} 份资料生成低置信研究训练 Memo。研究采用默认价值投资准则；资料不足部分必须继续验证。",
+        MemoChapter.CIRCLE_OF_COMPETENCE.value: "当前资料尚不足以形成高置信能力圈判断，应继续补充业务模式、收入结构和行业资料。",
+        MemoChapter.BUSINESS_MODEL.value: body_for("business_model_moat", "缺少商业模式证据。"),
+        MemoChapter.KEY_VARIABLES.value: "需要识别收入、利润、现金流和估值的核心驱动变量及敏感性。",
+        MemoChapter.FINANCIAL_EARNINGS_QUALITY.value: body_for("financial_quality_dividend", "缺少财务质量与盈利质量证据。"),
+        MemoChapter.CASH_FLOW.value: body_for("financial_quality_dividend", "缺少现金流质量证据。"),
+        MemoChapter.DIVIDEND.value: "不得将高股息直接等同于安全；需要验证自由现金流覆盖分红、分红连续性和资产负债表压力。",
+        MemoChapter.BALANCE_SHEET.value: "需要补充资产负债率、有息负债、短债压力、现金储备和 ROE 杠杆拆解。",
+        MemoChapter.BUSINESS_STABILITY_MOAT.value: body_for("business_model_moat", "缺少商业模式稳定性与护城河证据。"),
+        MemoChapter.INDUSTRY_COMPETITION.value: "需要补充行业需求、竞争格局、公司地位及周期风险证据。",
+        MemoChapter.MANAGEMENT_CAPITAL_ALLOCATION.value: body_for("management_view_comparison", "缺少管理层资本配置证据。"),
+        MemoChapter.NARRATIVE_VS_FINANCIALS.value: body_for("management_view_comparison", "缺少管理层叙事和财务现实对照。"),
+        MemoChapter.SELL_SIDE_CONSENSUS_DIVERGENCE.value: "卖方观点只能作为输入材料；需拆解共识、核心分歧及其假设和证据来源。",
+        MemoChapter.VALUATION_MARGIN.value: "当前骨架不做估值结论；低估值不能直接等同于安全边际。",
+        MemoChapter.VALUE_TRAP.value: body_for("value_trap_contradiction", "价值陷阱检查不可跳过。"),
+        MemoChapter.VERIFICATION_QUESTIONS.value: "请补充完整财务表、分红历史、管理层交流纪要、卖方观点摘要和行业需求资料。",
+        MemoChapter.RESEARCH_VIEW_UNCERTAINTY.value: "资料不足暂不评级。当前判断存在重大资料缺口和不确定性，仅用于研究训练。",
+        MemoChapter.SOURCES_DISCLAIMER.value: f"{chr(10).join(f'- {doc.source_id}: {doc.title}' for doc in state.source_documents) or '无来源资料。'}\n\n{DISCLAIMER_ZH}",
+    }
     sections = [
         MemoSection(
-            section_id="material_scope_confidence",
-            title="资料范围与结论置信度",
-            body=f"当前基于用户提供的 {len(state.source_documents)} 份资料生成低置信研究训练 Memo。资料不足部分必须继续验证。",
-            confidence=Confidence.LOW,
-        ),
-        MemoSection(
-            section_id="company_info",
-            title="公司基本信息",
-            body=f"公司：{state.company_profile.company_name}；代码：{state.company_profile.ticker or '未提供'}；行业：{state.company_profile.industry}。",
-            confidence=Confidence.MEDIUM,
-        ),
-        MemoSection(
-            section_id="doctrine",
-            title="研究准则适用说明",
-            body=body_for("firm_doctrine_case_retrieval", "使用默认价值投资准则。"),
-            confidence=Confidence.LOW,
-        ),
-        MemoSection(section_id="circle_of_competence", title="能力圈判断", body="当前资料尚不足以形成高置信能力圈判断，应继续补充业务模式、收入结构和行业资料。", confidence=Confidence.LOW),
-        MemoSection(section_id="business_model", title="公司靠什么赚钱", body=body_for("business_model_moat", "缺少商业模式证据。"), confidence=Confidence.LOW),
-        MemoSection(section_id="cash_flow_quality", title="现金流质量", body=body_for("financial_quality_dividend", "缺少财务质量证据。"), confidence=Confidence.LOW),
-        MemoSection(section_id="dividend_quality", title="分红质量与可持续性", body="不得将高股息直接等同于安全；需要验证自由现金流覆盖分红、分红连续性和资产负债表压力。", confidence=Confidence.LOW),
-        MemoSection(section_id="balance_sheet", title="资产负债表安全性", body="需要补充资产负债率、有息负债、短债压力、现金储备和 ROE 杠杆拆解。", confidence=Confidence.LOW),
-        MemoSection(section_id="moat", title="商业模式稳定性与竞争优势", body=body_for("business_model_moat", "缺少护城河证据。"), confidence=Confidence.LOW),
-        MemoSection(section_id="management_capital_allocation", title="管理层资本配置", body=body_for("management_view_comparison", "缺少管理层资本配置证据。"), confidence=Confidence.LOW),
-        MemoSection(section_id="narrative_vs_financials", title="管理层叙事 vs 财务现实", body=body_for("management_view_comparison", "缺少管理层叙事和财务现实对照。"), confidence=Confidence.LOW),
-        MemoSection(section_id="sell_side_views", title="卖方共识与核心分歧", body="卖方观点只能作为输入材料，不能直接作为买方结论。", confidence=Confidence.LOW),
-        MemoSection(section_id="valuation_margin", title="估值与安全边际", body="当前骨架不做估值结论；低估值不能直接等同于安全边际。", confidence=Confidence.LOW),
-        MemoSection(section_id="value_trap", title="价值陷阱与反证风险", body=body_for("value_trap_contradiction", "价值陷阱检查不可跳过。"), confidence=Confidence.LOW),
-        MemoSection(section_id="verification_questions", title="待验证问题", body="请补充完整财务表、分红历史、管理层交流纪要、卖方观点摘要和行业需求资料。", confidence=Confidence.LOW),
-        MemoSection(section_id="research_view", title="研究观点或内部研究标签", body="资料不足暂不评级。该标签仅用于研究训练，不构成投资建议。", confidence=Confidence.LOW),
-        MemoSection(section_id="uncertainty", title="不确定性与资料缺口", body="当前输出为工作流骨架结果，所有具体投资判断都需要在细粒度证据抽取后重新生成。", confidence=Confidence.LOW),
-        MemoSection(section_id="sources", title="来源列表", body="\n".join(f"- {doc.source_id}: {doc.title}" for doc in state.source_documents) or "无来源资料。", confidence=Confidence.MEDIUM if source_ids else Confidence.LOW),
-        MemoSection(section_id="disclaimer", title="不构成投资建议声明", body=DISCLAIMER_ZH, confidence=Confidence.HIGH),
+            section_id=section_id,
+            title=title,
+            body=bodies[section_id],
+            confidence=Confidence.HIGH if section_id == MemoChapter.SOURCES_DISCLAIMER.value else Confidence.MEDIUM if section_id == MemoChapter.COMPANY_INFO.value else Confidence.LOW,
+        )
+        for section_id, title in MEMO_CHAPTERS
     ]
     memo = ResearchMemo(
         company_profile=state.company_profile,
@@ -615,6 +610,17 @@ def run_gate_blocked_memo(state: WorkflowState) -> ResearchMemo:
 
 def run_research_coach_review(memo_text: str, state: WorkflowState) -> AgentOutput:
     findings: list[AgentFinding] = []
+    chapter_scores = score_memo_chapter_coverage(memo_text)
+    for chapter in chapter_scores:
+        if not chapter["covered"]:
+            findings.append(
+                AgentFinding(
+                    title=f"章节缺失：{chapter['title']}",
+                    detail=f"用户 Memo 未覆盖标准19章中的「{chapter['title']}」，该章评分为 0；应补充对应分析，或明确说明不适用及原因。",
+                    classification="missing_data",
+                    confidence=Confidence.MEDIUM,
+                )
+            )
     checks = [
         ("证据来源", ["来源", "source", "出处"]),
         ("反证风险", ["反证", "风险", "价值陷阱"]),
@@ -677,4 +683,8 @@ def run_research_coach_review(memo_text: str, state: WorkflowState) -> AgentOutp
         missing_materials=[],
         confidence=Confidence.LOW,
         warnings=["当前为规则型批改骨架，后续应接入机构 doctrine 和历史优秀案例。"],
+        structured_output={
+            "chapter_scores": chapter_scores,
+            "chapter_coverage_score": round(sum(int(item["score"]) for item in chapter_scores) / len(chapter_scores), 1),
+        },
     )

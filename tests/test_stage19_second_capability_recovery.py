@@ -57,7 +57,7 @@ class OrganizerClient:
                 "reliability_level":"secondary","reliability_note":"券商二手观点",
                 "contains_financial_data":True,"contains_sell_side_views":True,
                 "contains_forecasts":True,"contains_unverified_claims":True,
-                "usable_sections":["view_comparison","valuation_margin"],"warnings":[],
+                "usable_sections":["sell_side_consensus_divergence","valuation_margin"],"warnings":[],
             }],
             "findings":[],"missing_materials":[],"warnings":[],"confidence":"high",
         }
@@ -160,7 +160,7 @@ class SecondCapabilityRecoveryTest(unittest.TestCase):
         )
         claims=[
             ResearchClaim(topic="商业模式",statement="设备销售和维保服务构成收入。",supporting_evidence_ids=[evidence.evidence_id],source_skill_ids=["business_model_moat"],primary_section="business_model"),
-            ResearchClaim(topic="护城河",statement="存量装机形成服务网络，但面临低价竞争。",supporting_evidence_ids=[evidence.evidence_id],source_skill_ids=["business_model_moat"],primary_section="moat"),
+            ResearchClaim(topic="护城河",statement="存量装机形成服务网络，但面临低价竞争。",supporting_evidence_ids=[evidence.evidence_id],source_skill_ids=["business_model_moat"],primary_section="business_stability_moat"),
             ResearchClaim(topic="能力圈",statement="收入逻辑可理解，维保续签率仍未知。",supporting_evidence_ids=[evidence.evidence_id],source_skill_ids=["business_model_moat"],primary_section="circle_of_competence"),
             ResearchClaim(topic="管理层目标与现金流",statement="管理层预计增长，但经营现金流尚未验证。",supporting_evidence_ids=[evidence.evidence_id],source_skill_ids=["management_view_comparison"],primary_section="narrative_vs_financials"),
         ]
@@ -175,7 +175,7 @@ class SecondCapabilityRecoveryTest(unittest.TestCase):
         self.assertEqual([item.section_id for item in memo.sections],[item[0] for item in STANDARD_SECTIONS])
         self.assertEqual(len(memo.sections),19)
         by_id={item.section_id:item for item in memo.sections}
-        for section in ("business_model","moat","circle_of_competence"):
+        for section in ("business_model","business_stability_moat","circle_of_competence"):
             self.assertEqual(by_id[section].status,"complete")
             self.assertTrue(by_id[section].supporting_claim_ids)
             self.assertTrue(by_id[section].evidence_ids)

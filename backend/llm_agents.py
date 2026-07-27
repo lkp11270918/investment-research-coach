@@ -14,6 +14,7 @@ from .agents import run_value_trap_contradiction as run_stub_value_trap_contradi
 from .financial_parser import expected_financial_metric_names, extract_structured_financial_evidence
 from .llm_client import LLMError, OpenAIClient
 from .localization import language_instruction
+from .memo_chapters import MEMO_CHAPTER_IDS, MEMO_CHAPTER_TITLES
 from .model_pipeline import classify_material, classify_statement
 from .value_investing_doctrine import doctrine_text
 from .models import (
@@ -343,6 +344,7 @@ RESEARCH_COACH_REVIEW_PROMPT = (
 2. 证据缺口批改：检查每个关键判断是否有用户资料或 evidence 支持；指出缺少哪些财务表、公告、年报、现金流、分红、负债、行业、管理层或反方资料。
 3. 价值陷阱遗漏：检查是否遗漏高股息不可持续、低估值来自主业衰退、利润现金流背离、自由现金流不足、一次性收益、杠杆 ROE、行业下行、应收/存货恶化、管理层叙事与财务现实冲突等。
 4. 不符合机构理念：检查是否违背价值投资研究训练理念，例如低估值=安全边际、高股息=安全、观点先行、缺少能力圈、缺少安全边际验证、缺少反证问题、资料不足却高置信。
+5. 标准章节覆盖：逐章对照统一的19章 Memo 结构评分；缺失章节必须指出，合并章节按合并后的标准标题判断。
 
 特别要求：
 - 必须逐条指出问题、原因和修改方向。
@@ -428,19 +430,20 @@ MEMO_GENERATOR_PROMPT = (
 - 必须包含不构成投资建议声明。
 - 每个章节尽量引用 evidence_ids；不要引用不存在的 evidence_id。
 
-章节必须按以下 section_id 输出：
-material_scope_confidence, company_info, doctrine, circle_of_competence, business_model,
-cash_flow_quality, dividend_quality, balance_sheet, moat, management_capital_allocation,
-narrative_vs_financials, sell_side_views, valuation_margin, value_trap, verification_questions,
-research_view, uncertainty, sources, disclaimer
+章节必须严格按以下19个 section_id 及顺序输出：
+company_info, scope_doctrine_confidence, circle_of_competence, business_model, key_variables,
+financial_earnings_quality, cash_flow, dividend, balance_sheet, business_stability_moat,
+industry_competition, management_capital_allocation, narrative_vs_financials,
+sell_side_consensus_divergence, valuation_margin, value_trap, verification_questions,
+research_view_uncertainty, sources_disclaimer
 
 返回 JSON 格式：
 {
   "confidence": "high | medium | low",
   "sections": [
     {
-      "section_id": "material_scope_confidence",
-      "title": "资料范围与结论置信度",
+      "section_id": "company_info",
+      "title": "公司基本信息",
       "body": "string",
       "evidence_ids": ["EV-..."],
       "confidence": "high | medium | low"
@@ -1312,6 +1315,11 @@ def run_research_coach_review_llm(
                     "证据缺口批改",
                     "价值陷阱遗漏",
                     "不符合机构理念",
+                    "标准19章逐章评分",
+                ],
+                "memo_chapters": [
+                    {"section_id": section_id, "title": title}
+                    for section_id, title in MEMO_CHAPTER_TITLES.items()
                 ],
             },
         )
@@ -1380,6 +1388,7 @@ def run_research_coach_review_llm(
         missing_materials=missing_materials,
         confidence=confidence,
         warnings=warnings,
+        structured_output=rule_review.structured_output,
     )
 
 
@@ -1532,48 +1541,8 @@ def run_research_memo_generator_llm(state: WorkflowState, client: OpenAIClient |
         return run_stub_research_memo_generator(state)
 
     valid_evidence_ids = {item.evidence_id for item in state.evidence_items}
-    allowed_sections = [
-        "material_scope_confidence",
-        "company_info",
-        "doctrine",
-        "circle_of_competence",
-        "business_model",
-        "cash_flow_quality",
-        "dividend_quality",
-        "balance_sheet",
-        "moat",
-        "management_capital_allocation",
-        "narrative_vs_financials",
-        "sell_side_views",
-        "valuation_margin",
-        "value_trap",
-        "verification_questions",
-        "research_view",
-        "uncertainty",
-        "sources",
-        "disclaimer",
-    ]
-    default_titles = {
-        "material_scope_confidence": "资料范围与结论置信度",
-        "company_info": "公司基本信息",
-        "doctrine": "研究准则适用说明",
-        "circle_of_competence": "能力圈判断",
-        "business_model": "公司靠什么赚钱",
-        "cash_flow_quality": "现金流质量",
-        "dividend_quality": "分红质量与可持续性",
-        "balance_sheet": "资产负债表安全性",
-        "moat": "商业模式稳定性与竞争优势",
-        "management_capital_allocation": "管理层资本配置",
-        "narrative_vs_financials": "管理层叙事 vs 财务现实",
-        "sell_side_views": "卖方共识与核心分歧",
-        "valuation_margin": "估值与安全边际",
-        "value_trap": "价值陷阱与反证风险",
-        "verification_questions": "待验证问题",
-        "research_view": "研究观点或内部研究标签",
-        "uncertainty": "不确定性与资料缺口",
-        "sources": "来源列表",
-        "disclaimer": "不构成投资建议声明",
-    }
+    allowed_sections = list(MEMO_CHAPTER_IDS)
+    default_titles = MEMO_CHAPTER_TITLES
 
     raw_sections = {
         str(item.get("section_id")): item

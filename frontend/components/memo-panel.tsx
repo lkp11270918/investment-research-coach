@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import type { BackendEvidenceItem, BackendMemo } from '@/lib/api'
+import { MEMO_CHAPTER_TITLES } from '@/lib/memo-chapters'
 
 interface MemoPanelProps {
   companyName?: string
@@ -168,7 +169,7 @@ function EvidenceTraceList({
 const memoSections = [
   {
     id: 'overview',
-    title: '资料范围与结论置信度',
+    title: '资料范围、研究准则适用性与结论置信度',
     icon: '01',
     content: (
       <div className="space-y-3 text-sm">
@@ -216,7 +217,7 @@ const memoSections = [
   },
   {
     id: 'cashflow',
-    title: '现金流质量分析',
+    title: '现金流质量',
     icon: '03',
     badge: { label: '优秀', color: 'bg-success/15 text-success border-success/30' },
     content: (
@@ -311,7 +312,7 @@ const memoSections = [
   },
   {
     id: 'business',
-    title: '商业模式稳定性与竞争优势',
+    title: '商业模式稳定性、护城河与竞争优势',
     icon: '06',
     badge: { label: '稳固', color: 'bg-success/15 text-success border-success/30' },
     content: (
@@ -371,7 +372,7 @@ const memoSections = [
   },
   {
     id: 'sellside',
-    title: '卖方共识与核心分歧',
+    title: '卖方共识、核心分歧与分歧来源',
     icon: '08',
     content: (
       <div className="space-y-3 text-sm">
@@ -442,7 +443,7 @@ const memoSections = [
   },
   {
     id: 'gaps',
-    title: '待验证问题与资料缺口',
+    title: '待验证问题',
     icon: '10',
     content: (
       <div className="space-y-3 text-sm">
@@ -473,7 +474,7 @@ const memoSections = [
   },
   {
     id: 'view',
-    title: '研究观点',
+    title: '研究观点、内部研究标签、不确定性与资料缺口',
     icon: '11',
     badge: { label: '积极关注', color: 'bg-primary/15 text-primary border-primary/30' },
     content: (
@@ -554,7 +555,7 @@ export function MemoPanel({ companyName = '—', stockCode = '—', industry = '
                     }`}
                   >
                     <span className="font-mono text-[10px] text-muted-foreground shrink-0 w-5">{String(idx + 1).padStart(2, '0')}</span>
-                    <span className="flex-1 truncate">{section.title}</span>
+                    <span className="flex-1 truncate">{MEMO_CHAPTER_TITLES[section.section_id]}</span>
                   </button>
                 ))}
               </div>
@@ -592,7 +593,7 @@ export function MemoPanel({ companyName = '—', stockCode = '—', industry = '
                   <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-accent/30 transition-colors [&[data-state=open]]:bg-accent/20">
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-xs text-muted-foreground shrink-0">{String(idx + 1).padStart(2, '0')}</span>
-                      <span className="text-sm font-medium text-foreground">{section.title}</span>
+                      <span className="text-sm font-medium text-foreground">{MEMO_CHAPTER_TITLES[section.section_id]}</span>
                       <Badge variant="outline" className="text-[10px] h-5 border-border text-muted-foreground">{section.confidence}</Badge>
                     </div>
                   </AccordionTrigger>

@@ -14,6 +14,7 @@ from .models import (
 )
 from .evidence_relations import infer_semantic_edges, infer_semantic_edges_nli
 from .llm_client import OpenAIClient
+from .memo_chapters import MEMO_CHAPTER_TITLES, canonical_chapter_id
 
 
 def build_evidence_graph(
@@ -133,10 +134,14 @@ def build_evidence_graph(
 
     if state.memo:
         for section in state.memo.sections:
-            section_id = f"MEMO:{section.section_id}"
-            nodes.append(EvidenceGraphNode(node_id=section_id, node_type="memo_section", label=section.title, confidence=section.confidence, verification_status=VerificationStatus.PARTIALLY_SUPPORTED, metadata={"section_id": section.section_id, "status": section.status}))
+            canonical_id = canonical_chapter_id(section.section_id) or section.section_id
+            section_id = f"MEMO:{canonical_id}"
+            canonical_title = MEMO_CHAPTER_TITLES.get(canonical_id, section.title)
+            nodes.append(EvidenceGraphNode(node_id=section_id, node_type="memo_section", label=canonical_title, confidence=section.confidence, verification_status=VerificationStatus.PARTIALLY_SUPPORTED, metadata={"section_id": canonical_id, "status": section.status}))
             for claim_id in section.supporting_claim_ids:
-                edges.append(EvidenceGraphEdge(from_node_id=f"CLAIM:{claim_id}", to_node_id=section_id, relation=EvidenceRelation.INCLUDED_IN, rationale=section.title, confidence=section.confidence))
+                edges.append(EvidenceGraphEdge(from_node_id=f"CLAIM:{claim_id}", to_node_id=section_id, relation=EvidenceRelation.INCLUDED_IN, rationale=canonical_title, confidence=section.confidence))
+            for evidence_id in section.evidence_ids:
+                edges.append(EvidenceGraphEdge(from_node_id=f"EVIDENCE:{evidence_id}", to_node_id=section_id, relation=EvidenceRelation.SUPPORTS, rationale=canonical_title, confidence=section.confidence))
     node_by_id = {node.node_id: node for node in nodes}
     semantic_edges = [
         edge

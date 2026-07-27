@@ -4,64 +4,30 @@ from collections import defaultdict
 
 from .agents import DISCLAIMER_ZH
 from .localization import is_english
+from .memo_chapters import (
+    MEMO_CHAPTERS,
+    MEMO_CHAPTERS_EN,
+    MEMO_CHAPTER_TITLES,
+    MEMO_CHAPTER_TITLES_EN,
+    MemoChapter,
+)
 from .models import Confidence, MemoSection, ResearchClaim, ResearchMemo, WorkflowState
 from .research_agents import _route_claim
 
 
-STANDARD_SECTIONS = (
-    ("company_info", "公司基本信息"),
-    ("material_scope_confidence", "资料范围与结论置信度"),
-    ("circle_of_competence", "能力圈判断"),
-    ("business_model", "商业模式"),
-    ("key_variables", "核心经营变量"),
-    ("financial_quality", "财务质量"),
-    ("cash_flow", "现金流质量"),
-    ("dividend", "分红质量与可持续性"),
-    ("balance_sheet", "资产负债表安全性"),
-    ("earnings_quality", "盈利质量"),
-    ("moat", "护城河与竞争优势"),
-    ("industry_competition", "行业与竞争格局"),
-    ("management_capital_allocation", "管理层与资本配置"),
-    ("narrative_vs_financials", "管理层叙事与财务现实"),
-    ("view_comparison", "多方观点比较"),
-    ("valuation_margin", "估值与安全边际"),
-    ("value_trap", "价值陷阱与反证"),
-    ("verification_gaps", "待验证问题与资料缺口"),
-    ("sources_disclaimer", "来源与免责声明"),
-)
-STANDARD_SECTIONS_EN = (
-    ("company_info", "Company Information"),
-    ("material_scope_confidence", "Material Scope and Confidence"),
-    ("circle_of_competence", "Circle of Competence"),
-    ("business_model", "Business Model"),
-    ("key_variables", "Key Operating Variables"),
-    ("financial_quality", "Financial Quality"),
-    ("cash_flow", "Cash Flow Quality"),
-    ("dividend", "Dividend Quality and Sustainability"),
-    ("balance_sheet", "Balance Sheet Safety"),
-    ("earnings_quality", "Earnings Quality"),
-    ("moat", "Moat and Competitive Advantages"),
-    ("industry_competition", "Industry and Competition"),
-    ("management_capital_allocation", "Management and Capital Allocation"),
-    ("narrative_vs_financials", "Management Narrative vs. Financial Reality"),
-    ("view_comparison", "Comparison of Views"),
-    ("valuation_margin", "Valuation and Margin of Safety"),
-    ("value_trap", "Value Traps and Counter-Evidence"),
-    ("verification_gaps", "Verification Questions and Information Gaps"),
-    ("sources_disclaimer", "Sources and Disclaimer"),
-)
-
-SECTION_TITLES=dict(STANDARD_SECTIONS)
-SECTION_TITLES_EN=dict(STANDARD_SECTIONS_EN)
+STANDARD_SECTIONS = MEMO_CHAPTERS
+STANDARD_SECTIONS_EN = MEMO_CHAPTERS_EN
+SECTION_TITLES = MEMO_CHAPTER_TITLES
+SECTION_TITLES_EN = MEMO_CHAPTER_TITLES_EN
 DISCLAIMER_EN = (
     "This material is for research training only. It does not constitute investment advice, "
     "a trading instruction, or a guarantee of returns."
 )
 RESEARCH_SECTIONS={
-    "circle_of_competence","business_model","key_variables","financial_quality",
-    "cash_flow","dividend","balance_sheet","earnings_quality","moat",
+    "circle_of_competence","business_model","key_variables","financial_earnings_quality",
+    "cash_flow","dividend","balance_sheet","business_stability_moat",
     "industry_competition","management_capital_allocation",
-    "narrative_vs_financials","view_comparison","valuation_margin","value_trap",
+    "narrative_vs_financials","sell_side_consensus_divergence","valuation_margin","value_trap",
 }
 
 
@@ -79,16 +45,16 @@ def _approved_claims(state: WorkflowState) -> list[tuple[ResearchClaim, str]]:
 def _missing_for(state: WorkflowState, section_id: str) -> list[str]:
     skill_by_section={
         "circle_of_competence":"business_model_moat","business_model":"business_model_moat",
-        "moat":"business_model_moat","financial_quality":"financial_quality_dividend",
+        "business_stability_moat":"business_model_moat","financial_earnings_quality":"financial_quality_dividend",
         "cash_flow":"financial_quality_dividend","dividend":"financial_quality_dividend",
-        "balance_sheet":"financial_quality_dividend","earnings_quality":"financial_quality_dividend",
+        "balance_sheet":"financial_quality_dividend",
         "management_capital_allocation":"management_view_comparison",
-        "narrative_vs_financials":"management_view_comparison","view_comparison":"management_view_comparison",
+        "narrative_vs_financials":"management_view_comparison","sell_side_consensus_divergence":"management_view_comparison",
         "valuation_margin":"valuation_margin","value_trap":"value_trap_contradiction",
     }
     skill=state.skill_outputs.get(skill_by_section.get(section_id,""))
     missing=list(getattr(skill,"missing_inputs",[])) if skill else []
-    if section_id in {"circle_of_competence","business_model","moat"} and skill:
+    if section_id in {"circle_of_competence","business_model","business_stability_moat"} and skill:
         structured=getattr(skill,"structured_output",{})
         missing.extend(structured.get("missing_information",[]) if isinstance(structured,dict) else [])
     return list(dict.fromkeys(str(item) for item in missing if item))
@@ -113,7 +79,7 @@ def _research_section(
     statements=list(dict.fromkeys(statement.strip() for _,statement in selected if statement.strip()))
     if section_id=="narrative_vs_financials":
         body=("After cross-checking management narratives against disclosed financial results, the supported conclusions are: " + "; ".join(statements)) if english else "对管理层叙事与已披露财务结果进行交叉审查后，当前可保留的判断是："+"；".join(statements)
-    elif section_id=="view_comparison":
+    elif section_id=="sell_side_consensus_divergence":
         body=("After comparing consensus, disagreements, and their underlying assumptions, the supported conclusions are: " + "; ".join(statements)) if english else "综合不同观点的共同点、分歧点及其假设来源后，当前可保留的判断是："+"；".join(statements)
     else:
         body="\n\n".join(statements)
@@ -151,7 +117,7 @@ def run_memo_writing_skill(state: WorkflowState) -> ResearchMemo:
             body=(f"Company: {profile.company_name}; Ticker: {profile.ticker or 'Not provided'}; Industry: {profile.industry or 'Not provided'}."
                   if english else f"公司：{profile.company_name}；代码：{profile.ticker or '未提供'}；行业：{profile.industry or '未提供'}。")
             sections.append(MemoSection(section_id=section_id,title=title,body=body,confidence=Confidence.MEDIUM,status="complete",summary=body))
-        elif section_id=="material_scope_confidence":
+        elif section_id=="scope_doctrine_confidence":
             conflicts=sum(item.type_conflict for item in state.document_intelligence)
             body=(f"This research used {len(state.source_documents)} source documents and {len(state.evidence_items)} evidence items; "
                   f"{conflicts} material-type conflicts were identified; the Evidence Graph quality score is {state.evidence_graph_quality.score:.1f}. "
@@ -162,7 +128,7 @@ def run_memo_writing_skill(state: WorkflowState) -> ResearchMemo:
             sections.append(MemoSection(section_id=section_id,title=title,body=body,confidence=Confidence.MEDIUM,status="complete",summary=body))
         elif section_id in RESEARCH_SECTIONS:
             sections.append(_research_section(state,section_id,routed.get(section_id,[])))
-        elif section_id=="verification_gaps":
+        elif section_id=="verification_questions":
             questions=list(dict.fromkeys(
                 ([*state.pre_memo_gate.unsupported_claims,*state.pre_memo_gate.evidence_issues,*state.pre_memo_gate.compliance_warnings] if state.pre_memo_gate and not gate_passed else [])
                 +[item for decision in state.judge_decisions for item in decision.missing_evidence]
@@ -172,6 +138,16 @@ def run_memo_writing_skill(state: WorkflowState) -> ResearchMemo:
             ))
             body="\n".join(f"- {item}" for item in questions) or ("No new verification questions." if english else "当前没有新增待验证问题。")
             sections.append(MemoSection(section_id=section_id,title=title,body=body,confidence=Confidence.LOW,status="partial" if questions else "complete",summary=questions[0] if questions else body,missing_information=questions))
+        elif section_id=="research_view_uncertainty":
+            gaps=list(dict.fromkeys(
+                [item for decision in state.judge_decisions for item in decision.missing_evidence]
+                +[item for skill in state.skill_outputs.values() for item in getattr(skill,"missing_inputs",[])]
+            ))
+            body=("Research label: insufficient information to rate. Uncertainty and information gaps: " if english else
+                  "研究观点与内部研究标签：资料不足暂不评级。不确定性与资料缺口：") + (
+                  "; ".join(gaps) if gaps else ("No material gap identified." if english else "当前未识别新增重大资料缺口。")
+            )
+            sections.append(MemoSection(section_id=section_id,title=title,body=body,confidence=Confidence.LOW,status="partial" if gaps else "complete",summary=body,missing_information=gaps))
         elif section_id=="sources_disclaimer":
             sources=(
                 "\n".join(f"- {source.source_id}: {source.title} ({source.source_type.value})" for source in state.source_documents)

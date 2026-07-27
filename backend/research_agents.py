@@ -6,6 +6,7 @@ import json
 from .agent_architecture import build_research_plan
 from .llm_client import LLMError, OpenAIClient
 from .localization import is_english, language_instruction
+from .memo_chapters import MEMO_CHAPTER_IDS, MemoChapter, canonical_chapter_id
 from .models import AgentFinding, AgentOutput, AgentStatus, Confidence, JudgeDecision, ResearchClaim, ResearchExecutionPlan, SkillResult, SourceType, WorkflowState
 from .value_investing_doctrine import doctrine_text
 
@@ -14,35 +15,34 @@ ALLOWED_SKILLS = {
     "bank_analysis", "manufacturing_analysis", "consumer_analysis", "utility_analysis", "general_business_analysis",
 }
 INDUSTRY_SKILLS={"bank_analysis","manufacturing_analysis","consumer_analysis","utility_analysis","general_business_analysis"}
-MEMO_SECTIONS={
-    "company_info","material_scope_confidence","circle_of_competence","business_model",
-    "key_variables","financial_quality","cash_flow","dividend","balance_sheet",
-    "earnings_quality","moat","industry_competition","management_capital_allocation",
-    "narrative_vs_financials","view_comparison","valuation_margin","value_trap",
-    "verification_gaps","sources_disclaimer",
-}
+MEMO_SECTIONS=set(MEMO_CHAPTER_IDS)
 
 
 def _route_claim(claim: ResearchClaim) -> ResearchClaim:
     """Assign one primary chapter from provenance, then refine inside that Skill family."""
-    if claim.primary_section in MEMO_SECTIONS:
+    canonical = canonical_chapter_id(claim.primary_section)
+    if canonical:
+        claim.primary_section = canonical
+        claim.secondary_sections = list(dict.fromkeys(
+            item for item in (canonical_chapter_id(section) for section in claim.secondary_sections) if item
+        ))
         return claim
     skill=claim.source_skill_ids[0] if claim.source_skill_ids else ""
     text=f"{claim.topic} {claim.statement}"
     if skill=="business_model_moat":
-        section="moat" if any(term in text for term in ("护城河","竞争优势","壁垒","侵蚀")) else "circle_of_competence" if "能力圈" in text else "business_model"
+        section=MemoChapter.BUSINESS_STABILITY_MOAT.value if any(term in text for term in ("护城河","竞争优势","壁垒","侵蚀","稳定性")) else MemoChapter.CIRCLE_OF_COMPETENCE.value if "能力圈" in text else MemoChapter.BUSINESS_MODEL.value
     elif skill=="financial_quality_dividend":
-        section="cash_flow" if "现金流" in text else "dividend" if any(term in text for term in ("分红","股息","派息")) else "balance_sheet" if any(term in text for term in ("负债","杠杆","偿债","资本充足","拨备")) else "earnings_quality" if any(term in text for term in ("盈利质量","非经常","应收","存货","利润")) else "financial_quality"
+        section=MemoChapter.CASH_FLOW.value if "现金流" in text else MemoChapter.DIVIDEND.value if any(term in text for term in ("分红","股息","派息")) else MemoChapter.BALANCE_SHEET.value if any(term in text for term in ("负债","杠杆","偿债","资本充足","拨备")) else MemoChapter.FINANCIAL_EARNINGS_QUALITY.value
     elif skill=="management_view_comparison":
-        section="narrative_vs_financials" if any(term in text for term in ("管理层叙事","财务现实","财务事实","是否冲突","乐观偏差")) else "management_capital_allocation" if any(term in text for term in ("资本配置","资本开支","并购","回购","扩产")) else "view_comparison"
+        section=MemoChapter.NARRATIVE_VS_FINANCIALS.value if any(term in text for term in ("管理层叙事","财务现实","财务事实","是否冲突","乐观偏差")) else MemoChapter.MANAGEMENT_CAPITAL_ALLOCATION.value if any(term in text for term in ("资本配置","资本开支","并购","回购","扩产")) else MemoChapter.SELL_SIDE_CONSENSUS_DIVERGENCE.value
     elif skill=="valuation_margin":
-        section="valuation_margin"
+        section=MemoChapter.VALUATION_MARGIN.value
     elif skill=="value_trap_contradiction" or claim.claim_type=="risk":
-        section="value_trap"
+        section=MemoChapter.VALUE_TRAP.value
     elif skill in INDUSTRY_SKILLS:
-        section="key_variables" if any(term in text for term in ("变量","驱动","敏感")) else "industry_competition"
+        section=MemoChapter.KEY_VARIABLES.value if any(term in text for term in ("变量","驱动","敏感")) else MemoChapter.INDUSTRY_COMPETITION.value
     else:
-        section="key_variables"
+        section=MemoChapter.KEY_VARIABLES.value
     claim.primary_section=section
     claim.topics=list(dict.fromkeys([*claim.topics,section]))
     return claim
@@ -73,7 +73,7 @@ def _structured_business_claims(results: list[SkillResult]) -> list[ResearchClai
     ]
     moat="；".join(item for item in moat_parts if item)
     if moat:
-        claims.append(ResearchClaim(topic="护城河",statement=moat,claim_type="reasoning",supporting_evidence_ids=evidence,confidence=Confidence.MEDIUM,source_skill_ids=[result.skill_id],topics=["moat"],primary_section="moat",falsification_conditions=["若竞争优势缺少可持续的经营或财务证据，护城河结论应降级。"]))
+        claims.append(ResearchClaim(topic="护城河",statement=moat,claim_type="reasoning",supporting_evidence_ids=evidence,confidence=Confidence.MEDIUM,source_skill_ids=[result.skill_id],topics=[MemoChapter.BUSINESS_STABILITY_MOAT.value],primary_section=MemoChapter.BUSINESS_STABILITY_MOAT.value,falsification_conditions=["若竞争优势缺少可持续的经营或财务证据，护城河结论应降级。"]))
     circle=data.get("circle_of_competence",{})
     if isinstance(circle,dict) and (circle.get("reasoning") or circle.get("unknowns")):
         statement=f"能力圈状态：{circle.get('status','insufficient_data')}；{circle.get('reasoning','')}；未知项：{'、'.join(circle.get('unknowns',[]))}"
@@ -152,7 +152,7 @@ def run_analyst_agent(state: WorkflowState, client: OpenAIClient | None = None) 
             parsed=[]; valid_evidence={item.evidence_id for item in state.evidence_items}; valid_skills={item.skill_id for item in skill_results}
             for raw in result.get("claims",[])[:30]:
                 if not isinstance(raw,dict) or not str(raw.get("statement","")).strip(): continue
-                parsed.append(ResearchClaim(topic=str(raw.get("topic") or "研究判断"),statement=str(raw["statement"]),claim_type=raw.get("claim_type") if raw.get("claim_type") in {"fact","opinion","assumption","reasoning","risk"} else "reasoning",supporting_evidence_ids=[x for x in raw.get("supporting_evidence_ids",[]) if x in valid_evidence],counter_evidence_ids=[x for x in raw.get("counter_evidence_ids",[]) if x in valid_evidence],assumptions=[str(x) for x in raw.get("assumptions",[])],scenarios=[str(x) for x in raw.get("scenarios",[])],confidence=Confidence(str(raw.get("confidence"))) if str(raw.get("confidence")) in {"high","medium","low"} else Confidence.LOW,falsification_conditions=[str(x) for x in raw.get("falsification_conditions",[])],source_skill_ids=[x for x in raw.get("source_skill_ids",[]) if x in valid_skills],topics=[str(x) for x in raw.get("topics",[])],primary_section=str(raw.get("primary_section")) if raw.get("primary_section") in MEMO_SECTIONS else None,secondary_sections=[str(x) for x in raw.get("secondary_sections",[]) if x in MEMO_SECTIONS]))
+                parsed.append(ResearchClaim(topic=str(raw.get("topic") or "研究判断"),statement=str(raw["statement"]),claim_type=raw.get("claim_type") if raw.get("claim_type") in {"fact","opinion","assumption","reasoning","risk"} else "reasoning",supporting_evidence_ids=[x for x in raw.get("supporting_evidence_ids",[]) if x in valid_evidence],counter_evidence_ids=[x for x in raw.get("counter_evidence_ids",[]) if x in valid_evidence],assumptions=[str(x) for x in raw.get("assumptions",[])],scenarios=[str(x) for x in raw.get("scenarios",[])],confidence=Confidence(str(raw.get("confidence"))) if str(raw.get("confidence")) in {"high","medium","low"} else Confidence.LOW,falsification_conditions=[str(x) for x in raw.get("falsification_conditions",[])],source_skill_ids=[x for x in raw.get("source_skill_ids",[]) if x in valid_skills],topics=[str(x) for x in raw.get("topics",[])],primary_section=canonical_chapter_id(str(raw.get("primary_section"))),secondary_sections=list(dict.fromkeys(item for item in (canonical_chapter_id(str(x)) for x in raw.get("secondary_sections",[])) if item))))
             if parsed: claims=parsed
         except (LLMError,TimeoutError,OSError,TypeError,ValueError): pass
     structured=_structured_business_claims(skill_results)

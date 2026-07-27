@@ -89,7 +89,7 @@ const stats = [
   { value: '7', label: '价值投资分析维度' },
   { value: '5', label: '核心研究任务区' },
   { value: '4', label: '证据标注类型' },
-  { value: '11', label: 'Memo 标准章节' },
+  { value: '19', label: 'Memo 标准章节' },
 ]
 
 export function LandingPage({ onEnterApp, onLogin, onSignup }: LandingPageProps) {

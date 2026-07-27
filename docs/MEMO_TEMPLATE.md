@@ -1,159 +1,81 @@
 # Research Memo Template
 
-The memo generator must follow this section order unless an approved To B institution template overrides it.
+Memo 生成、Review Mode、Claim 路由、前端展示和 Evidence Graph 必须共同使用以下固定 19 章及顺序。除经批准的 To B 机构模板覆盖外，不得拆分、合并或改名。
 
-## 1. 资料范围与结论置信度
+## 1. 公司基本信息
 
-State:
+公司名称、证券代码、行业和市场。
 
-- Materials reviewed.
-- Important missing materials.
-- Overall confidence level.
-- Whether the conclusion is a verified view, low-confidence inference, or pending hypothesis.
+## 2. 资料范围、研究准则适用性与结论置信度
 
-## 2. 公司基本信息
+说明已审阅资料、重要缺失资料、适用的价值投资研究准则、整体置信度，以及结论属于已验证观点、低置信推断还是待验证假设。
 
-Include:
+## 3. 能力圈判断
 
-- Company name.
-- Ticker, if provided.
-- Industry.
-- Market, if provided.
+判断基于当前资料是否能够理解公司及关键未知项。
 
-## 3. 研究准则适用说明
+## 4. 商业模式：公司靠什么赚钱
 
-Explain which value investing doctrine items are most relevant to this case.
+说明收入来源、利润来源、客户价值、成本结构及资本强度。
 
-## 4. 能力圈判断
+## 5. 核心经营变量
 
-Assess whether the business is understandable based on current materials.
+列出驱动收入、利润、现金流和估值的核心变量、假设及敏感性。
 
-## 5. 公司靠什么赚钱
+## 6. 财务质量与盈利质量
 
-Explain:
+分析利润真实性、盈利持续性、异常项目、非经常性损益、应收和存货等。
 
-- Revenue sources.
-- Profit sources.
-- Core operating variables.
-- Cost or capital intensity when available.
+## 7. 现金流质量
 
-## 6. 现金流质量
+分析经营现金流、自由现金流、利润现金转化、营运资本和资本开支。
 
-Analyze:
+## 8. 分红质量与可持续性
 
-- Operating cash flow.
-- Free cash flow.
-- Net profit cash conversion.
-- Working capital concerns.
-- Missing financial fields.
+分析分红历史、派息率、自由现金流覆盖及一次性因素。
 
-## 7. 分红质量与可持续性
+## 9. 资产负债表安全性
 
-Analyze:
+分析杠杆、有息负债、短债压力、现金储备和 ROE 的杠杆依赖。
 
-- Dividend history.
-- Payout ratio.
-- Free cash flow coverage.
-- Whether dividends rely on one-off gains or historical cash.
+## 10. 商业模式稳定性、护城河与竞争优势
 
-## 8. 资产负债表安全性
+分析需求稳定性、竞争优势、护城河类型及其持续性和侵蚀风险。
 
-Analyze:
+## 11. 行业与竞争格局
 
-- Leverage.
-- Interest-bearing debt.
-- Short-term debt pressure.
-- Cash reserves.
-- ROE leverage dependence.
+分析行业结构、周期、公司地位、竞争者和供需变化。
 
-## 9. 商业模式稳定性与竞争优势
+## 12. 管理层资本配置
 
-Analyze:
+分析分红、回购、再投资、扩张、并购以及行为与战略表述的一致性。
 
-- Demand stability.
-- Industry position.
-- Cycle risk.
-- Competitive advantage.
-- Capex requirements.
+## 13. 管理层叙事与财务现实
 
-## 10. 管理层资本配置
+对照管理层表述与财务证据，指出矛盾和未回答问题。
 
-Analyze:
+## 14. 卖方共识、核心分歧与分歧来源
 
-- Dividends.
-- Buybacks.
-- Reinvestment.
-- Expansion.
-- M&A.
-- Whether behavior matches stated strategy.
+区分卖方共识、核心分歧和少数观点，并拆解造成分歧的假设、数据口径和证据来源。不得把卖方观点直接转化为买方结论。
 
-## 11. 管理层叙事 vs 财务现实
+## 15. 估值与安全边际
 
-Compare:
+在当前资料允许的范围内讨论估值、关键假设、情景和安全边际；不得把低估值直接等同于安全边际。
 
-- Management explanation.
-- Financial evidence.
-- Contradictions.
-- Unanswered questions.
+## 16. 价值陷阱与反证风险
 
-## 12. 卖方共识与核心分歧
+覆盖高股息不可持续、低估值陷阱、现金流恶化、非经常性利润、杠杆 ROE、需求下滑、应收或存货恶化及推翻 Thesis 的变量。
 
-Separate:
+## 17. 待验证问题
 
-- Sell-side consensus.
-- Sell-side disagreement.
-- Minority views.
-- Key assumption differences.
+列出需要补充资料、外部验证或人工跟进的问题。
 
-Do not convert sell-side views directly into buy-side conclusions.
+## 18. 研究观点、内部研究标签、不确定性与资料缺口
 
-## 13. 估值与安全边际
+To C 仅使用研究训练标签；To B 可在内部使用机构定义标签。必须同时说明不确定性、低置信部分、缺失资料和缺乏支持的判断。
 
-Discuss valuation only as far as current materials allow.
+## 19. 来源列表与不构成投资建议声明
 
-Do not claim margin of safety from low valuation alone.
-
-## 14. 价值陷阱与反证风险
-
-Must include:
-
-- High-dividend sustainability risk.
-- Low-valuation trap risk.
-- Cash flow deterioration risk.
-- Non-recurring profit risk.
-- Leverage-driven ROE risk.
-- Demand decline risk.
-- Receivables or inventory risk, when data exists.
-- Thesis-breaking variables.
-
-## 15. 待验证问题
-
-List questions that need more data or human follow-up.
-
-## 16. 研究观点或内部研究标签
-
-To C:
-
-- Use only learning/research labels, such as "积极关注", "中性观察", "谨慎观察", or "资料不足暂不评级".
-
-To B:
-
-- Institution-defined internal labels are allowed only with an internal-use disclaimer.
-
-## 17. 不确定性与资料缺口
-
-Summarize:
-
-- Missing materials.
-- Low-confidence sections.
-- Unsupported or partially supported claims.
-
-## 18. 来源列表
-
-List source documents and important source IDs.
-
-## 19. 不构成投资建议声明
-
-Required statement:
+列出使用的来源资料及其标识，并附：
 
 本报告仅用于研究训练与内部分析参考，不构成任何投资建议、交易指令或收益承诺。所有结论均依赖当前用户提供资料，资料不足部分已标注为待验证。

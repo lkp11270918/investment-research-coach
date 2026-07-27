@@ -22,7 +22,7 @@ export type IngestedWebMaterial = {
 }
 
 export type BackendMemoSection = {
-  section_id: string
+  section_id: MemoChapterId
   title: string
   body: string
   evidence_ids: string[]
@@ -761,3 +761,4 @@ export async function fetchCapabilityProfileHistory(): Promise<CapabilityProfile
   if (!response.ok) throw new Error(await parseError(response))
   return response.json()
 }
+import type { MemoChapterId } from './memo-chapters'
