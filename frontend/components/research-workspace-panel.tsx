@@ -158,7 +158,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
     return <WorkspaceEmpty title="登录后使用研究工作台" description="研究地图、证据确认、Thesis版本和投委会答辩需要沉淀到你的研究项目。" action="登录" onAction={onLogin} />
   }
   if (!selectedProjectId) {
-    return <WorkspaceEmpty title="还没有可用的研究项目" description="请先在资料输入页完成一次公司分析，系统会自动建立研究项目。" />
+    return <WorkspaceEmpty title="还没有可用的研究项目" description="创建第一个研究项目，填写公司信息并上传资料后，Research Map、Evidence 和 Thesis 将自动建立。" action="新建研究项目" onAction={onNewResearch} />
   }
 
   const activeProject = projects.find(project => project.project_id === selectedProjectId)

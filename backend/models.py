@@ -801,6 +801,7 @@ class AnalyzeRequest(BaseModel):
     project_id: str | None = None
     company_profile: CompanyProfile
     materials: list[RawMaterial] = Field(default_factory=list)
+    research_mode: str = "thesis_validation"
     research_objective: str | None = None
     investment_horizon: str | None = None
     initial_view: str | None = None

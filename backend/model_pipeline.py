@@ -29,6 +29,12 @@ STATEMENT_LABELS = {
 
 def classify_material(material: RawMaterial) -> tuple[SourceType, float]:
     text = (material.title + " " + material.content[:4000]).lower()
+    sell_side_markers = sum(
+        marker in text
+        for marker in ("证券研究报告", "投资评级", "证券分析师", "研究所", "目标价", "维持“买入”", "维持“增持”")
+    )
+    if "证券研究报告" in text or sell_side_markers >= 2:
+        return SourceType.SELL_SIDE_SUMMARY, min(0.99, 0.8 + sell_side_markers * 0.04)
     scores = {label: sum(cue in text for cue in cues) for label, cues in MATERIAL_LABELS.items()}
     label, score = max(scores.items(), key=lambda item: item[1])
     return (label, min(0.99, 0.55 + score * 0.1)) if score else (material.source_type, 0.5)

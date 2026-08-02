@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from contextvars import copy_context
+from dataclasses import replace
+import hashlib
 from time import perf_counter
 
 from .agent_architecture import record_event
-from .agents import run_firm_doctrine_case_retrieval
+from .agents import run_evidence_extractor, run_firm_doctrine_case_retrieval, run_material_organizer, run_value_trap_contradiction
 from .config import get_settings
 from .evidence_graph import build_evidence_graph
 from .financial_calculations import calculate_financial_metrics
@@ -29,7 +31,7 @@ from .llm_agents import (
 from .llm_client import OpenAIClient, collected_usage, start_usage_tracking
 from .localization import is_english, output_language_matches, resolve_language
 from .memo_writing import run_memo_writing_skill
-from .model_pipeline import execute_model_pipeline
+from .model_pipeline import execute_model_pipeline, pipeline_records
 from .models import AgentFinding, AgentOutput, AgentStatus, AnalyzeRequest, Confidence, ResearchClaim, ReviewRequest, SkillResult, WorkflowState, WorkflowStopAfter
 from .research_agents import run_analyst_agent, run_judge_agent, run_planner_agent, to_skill_result
 from .research_judgment import build_research_judgment
@@ -119,6 +121,97 @@ def _save(state: WorkflowState, main: dict[str,AgentOutput]) -> WorkflowState:
 def _stop(request: AnalyzeRequest,*steps: WorkflowStopAfter) -> bool: return request.options.stop_after in steps
 
 
+def _client_for_model(model: str) -> OpenAIClient:
+    return OpenAIClient(replace(get_settings(), openai_model=model))
+
+
+def _offline_client() -> OpenAIClient:
+    return OpenAIClient(replace(get_settings(), openai_api_key=None, use_llm_agents=False))
+
+
+def _run_material_analysis_fast(
+    state: WorkflowState,
+    request: AnalyzeRequest,
+    main: dict[str, AgentOutput],
+) -> WorkflowState:
+    """Analyze uploaded materials without running the full thesis-to-Memo workflow."""
+    settings = get_settings()
+    small_client = _client_for_model(settings.openai_small_model)
+    offline_client = _offline_client()
+
+    record_event(state, "evidence", "running")
+    organizer = run_material_organizer(state)
+    state.skill_outputs["material_organization"] = to_skill_result(
+        "material_organization",
+        organizer,
+        {"materials": [material.title for material in state.raw_materials]},
+        execution_mode="deterministic",
+    )
+    extractor = run_evidence_extractor_llm(
+        state,
+        small_client,
+        content_chars=3000,
+        max_blocks_per_document=40,
+    )
+    extractor_failed = any("调用失败" in warning for warning in extractor.warnings)
+    if extractor_failed:
+        failure_warnings = list(extractor.warnings)
+        extractor = run_evidence_extractor(state)
+        extractor.warnings.extend(failure_warnings)
+    for item in state.evidence_items:
+        source_ids = ",".join(ref.source_id for ref in item.source_refs)
+        evidence_key = hashlib.sha256(f"{source_ids}\n{item.category.value}\n{item.statement}".encode("utf-8")).hexdigest()[:10]
+        item.evidence_id = f"EV-{evidence_key}"
+    evidence_mode = "degraded" if extractor_failed else "model"
+    state.skill_outputs["evidence_extraction"] = to_skill_result(
+        "evidence_extraction",
+        extractor,
+        {"sources": [document.source_id for document in state.source_documents]},
+        execution_mode=evidence_mode,
+        model_name=settings.openai_small_model if evidence_mode == "model" else None,
+    )
+    state.processing_records = pipeline_records(state.raw_materials, state.evidence_items, small_client.available)
+    _financials(state)
+    _sync_graph(state)
+    main["evidence"] = AgentOutput(
+        agent_name="Evidence Agent",
+        status=AgentStatus.PASS if state.evidence_items else AgentStatus.FAIL,
+        summary=f"建立 {len(state.evidence_items)} 条可追溯证据。",
+        findings=[*organizer.findings, *extractor.findings],
+        missing_materials=list(dict.fromkeys([*organizer.missing_materials, *extractor.missing_materials])),
+        confidence=Confidence.MEDIUM if state.evidence_items else Confidence.LOW,
+    )
+    record_event(state, "evidence", "completed", main["evidence"].summary)
+
+    record_event(state, "analysis", "running", "执行多来源观点比较、证据缺口与风险初筛")
+    comparison = run_management_view_comparison_llm(state, small_client)
+    comparison_mode = "degraded" if any("回退" in warning for warning in comparison.warnings) else "model"
+    state.skill_outputs["management_view_comparison"] = to_skill_result(
+        "management_view_comparison",
+        comparison,
+        {"evidence": [item.evidence_id for item in state.evidence_items]},
+        execution_mode=comparison_mode,
+        model_name=settings.openai_small_model if comparison_mode == "model" else None,
+    )
+    red_output = run_value_trap_contradiction(state)
+    state.skill_outputs["value_trap_contradiction"] = to_skill_result(
+        "value_trap_contradiction",
+        red_output,
+        {"evidence": [item.evidence_id for item in state.evidence_items]},
+        execution_mode="deterministic",
+    )
+    state.research_claims, main["research_analyst"] = run_analyst_agent(state, offline_client)
+    state.research_judgment = build_research_judgment(state)
+    state.judge_decisions, main["red_team_judge"] = run_judge_agent(state, "pass", offline_client)
+    _sync_graph(state)
+    record_event(state, "analysis", "completed", main["research_analyst"].summary)
+    record_event(state, "judge", main["red_team_judge"].status.value, main["red_team_judge"].summary)
+    state.current_stage = "complete"
+    state.workflow_status = "completed" if state.evidence_items else "needs_evidence"
+    record_event(state, "completed", state.workflow_status)
+    return _save(state, main)
+
+
 def _execute_planned_skills(
     state: WorkflowState,
     required: list[str],
@@ -181,12 +274,18 @@ def run_analysis_workflow(request: AnalyzeRequest) -> WorkflowState:
     request.company_profile.language_source = source
     state=WorkflowState(company_profile=request.company_profile,raw_materials=request.materials); main={}
     record_event(state,"planning","running")
-    state.research_plan,main["research_planner"]=run_planner_agent(state,request.research_objective,request.investment_horizon,request.initial_view,request.key_question)
+    planner_objective = request.research_objective
+    if request.research_mode == "material_analysis" and not planner_objective:
+        planner_objective = "解析上传资料中的事实、各方观点、共识、分歧、分歧来源、证据缺口与风险，不预设用户判断。"
+    planner_client = _offline_client() if request.research_mode == "material_analysis" else None
+    state.research_plan,main["research_planner"]=run_planner_agent(state,planner_objective,request.investment_horizon,request.initial_view,request.key_question,planner_client)
     doctrine=run_firm_doctrine_case_retrieval(state)
     state.skill_outputs["doctrine_context"]=to_skill_result("doctrine_context",doctrine,{"mode":state.company_profile.user_mode.value},execution_mode="deterministic")
     record_event(state,"planning","completed",main["research_planner"].summary)
     state.current_stage=WorkflowStopAfter.DOCTRINE.value
     if _stop(request,WorkflowStopAfter.DOCTRINE): return _save(state,main)
+    if request.research_mode == "material_analysis" and request.options.stop_after is None:
+        return _run_material_analysis_fast(state,request,main)
 
     record_event(state,"evidence","running"); organizer=_retry_model_fallback(run_material_organizer_llm,state,run_material_organizer_llm(state))
     organizer_mode,organizer_model=_execution_metadata("material_organization",organizer)

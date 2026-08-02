@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
+import json
 import re
 import xml.etree.ElementTree as ET
 import zipfile
@@ -11,9 +13,11 @@ from pypdf import PdfReader
 
 from .models import ContentBlock, MaterialModality, RawMaterial, SourceType
 from .multimodal_parser import MultimodalParseError, parse_audio, parse_image, parse_scanned_pdf
+from .config import PROJECT_ROOT
 
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".mp3", ".m4a", ".wav", ".mp4"}
+PARSE_CACHE_VERSION = "v1"
 
 
 class FileParseError(ValueError):
@@ -44,6 +48,21 @@ def parse_uploaded_file(
     ext = Path(filename).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
         raise FileParseError(f"暂不支持的文件类型：{ext or 'unknown'}")
+
+    cache_key = hashlib.sha256(PARSE_CACHE_VERSION.encode() + ext.encode() + data).hexdigest()
+    cache_path = PROJECT_ROOT / "data" / "cache" / "parsed_files" / f"{cache_key}.json"
+    try:
+        cached = RawMaterial.model_validate(json.loads(cache_path.read_text(encoding="utf-8")))
+        return cached.model_copy(
+            update={
+                "title": title or filename,
+                "file_name": filename,
+                "source_type": source_type_from_material_id(material_id),
+                "usage_rights_confirmed": True,
+            }
+        )
+    except (FileNotFoundError, OSError, ValueError, TypeError, json.JSONDecodeError):
+        pass
 
     blocks: list[ContentBlock] = []
     warnings: list[str] = []
@@ -86,7 +105,7 @@ def parse_uploaded_file(
         blocks = _blocks_from_content(content, ext)
         if ext in {".csv", ".xlsx"}:
             modality = MaterialModality.TABLE
-    return RawMaterial(
+    material = RawMaterial(
         title=title or filename,
         content=content,
         source_type=source_type_from_material_id(material_id),
@@ -96,6 +115,14 @@ def parse_uploaded_file(
         blocks=blocks,
         parse_warnings=warnings,
     )
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(material.model_dump(mode="json"), ensure_ascii=False), encoding="utf-8")
+        temporary.replace(cache_path)
+    except OSError:
+        pass
+    return material
 
 
 def _blocks_from_content(content: str, ext: str) -> list[ContentBlock]:

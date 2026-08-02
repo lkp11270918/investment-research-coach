@@ -22,6 +22,7 @@ interface InputPanelProps {
   projectId?: string | null
   initialCompany?: { stockCode: string; companyName: string; industry: string; outputLanguage?: 'auto' | 'zh' | 'en' } | null
   onStartAnalysis: (data: {
+    analysisMode: 'material_analysis' | 'thesis_validation'
     stockCode: string
     companyName: string
     industry: string
@@ -36,8 +37,8 @@ interface InputPanelProps {
 }
 
 const materialTypes = [
-  { id: 'financial', label: '财务数据表', icon: '📊', hint: '年报财务表、Excel 格式', required: true },
-  { id: 'annual', label: '年报摘要', icon: '📋', hint: '年报核心内容摘要', required: true },
+  { id: 'financial', label: '财务数据表', icon: '📊', hint: '年报财务表、Excel 格式', required: false },
+  { id: 'annual', label: '年报摘要', icon: '📋', hint: '年报核心内容摘要', required: false },
   { id: 'management', label: '管理层交流纪要', icon: '💬', hint: '业绩会、路演记录', required: false },
   { id: 'sellside', label: '卖方研报', icon: '📄', hint: '支持同时上传多份券商研报 PDF，用于比较共同点、分歧点和假设差异', required: false },
   { id: 'news', label: '新闻与行业资料', icon: '📰', hint: '相关新闻、行业研究', required: false },
@@ -86,9 +87,10 @@ ROE：36.5%（不含高杠杆）
 }
 
 export function InputPanel({ onStartAnalysis, projectId, initialCompany }: InputPanelProps) {
+  const [analysisMode, setAnalysisMode] = useState<'material_analysis' | 'thesis_validation'>('material_analysis')
   const [stockCode, setStockCode] = useState(initialCompany?.stockCode || '')
   const [companyName, setCompanyName] = useState(initialCompany?.companyName || '')
-  const [industry, setIndustry] = useState(initialCompany?.industry || '')
+  const industry = initialCompany?.industry || '待系统识别'
   const [researchObjective, setResearchObjective] = useState('')
   const [investmentHorizon, setInvestmentHorizon] = useState('3-5年')
   const [initialView, setInitialView] = useState('')
@@ -106,7 +108,6 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
   const handleSampleCompany = (c: typeof sampleCompanies[0]) => {
     setStockCode(c.code)
     setCompanyName(c.name)
-    setIndustry(c.industry)
   }
 
   const handleTextChange = (id: string, value: string) => {
@@ -121,10 +122,7 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
     if (!files.length || !activeType) return
-    setUploadedFiles(prev => ({
-      ...prev,
-      [activeType]: activeType === 'sellside' ? [...(prev[activeType] || []), ...files] : [files[0]],
-    }))
+    setUploadedFiles(prev => ({ ...prev, [activeType]: [...(prev[activeType] || []), ...files] }))
     event.target.value = ''
   }
 
@@ -163,7 +161,7 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
   const filledCount = materialTypes.filter(m => materialReady(m.id)).length
 
   const handleStart = () => {
-    if (!stockCode || !companyName) return
+    if ((!stockCode.trim() && !companyName.trim()) || (analysisMode === 'thesis_validation' && !initialView.trim())) return
     const materials: MaterialItem[] = materialTypes.map(m => ({
       id: m.id,
       type: m.label,
@@ -179,7 +177,7 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
       publisher: urlMetadata[m.id]?.publisher,
       publishedAt: urlMetadata[m.id]?.publishedAt,
     }))
-    onStartAnalysis({ stockCode, companyName, industry, projectId, researchObjective, investmentHorizon, initialView, keyQuestion, outputLanguage, materials })
+    onStartAnalysis({ analysisMode, stockCode: stockCode.trim(), companyName: companyName.trim(), industry, projectId, researchObjective: researchObjective.trim(), investmentHorizon, initialView: analysisMode === 'thesis_validation' ? initialView.trim() : '', keyQuestion: keyQuestion.trim(), outputLanguage, materials })
   }
 
   return (
@@ -191,7 +189,17 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
           <div>
             <h1 className="text-xl font-semibold text-foreground">{projectId ? '补充项目资料' : '新建研究任务'}</h1>
             <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-              输入公司信息，上传或粘贴研究资料，AI 将按照价值投资框架完成分析。
+              选择研究方式，上传或粘贴资料，AI 将按照价值投资框架完成分析。
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-border bg-card p-1">
+            <div className="grid grid-cols-2 gap-1" role="group" aria-label="研究模式">
+              <button type="button" onClick={() => setAnalysisMode('material_analysis')} className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${analysisMode === 'material_analysis' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>资料解析</button>
+              <button type="button" onClick={() => setAnalysisMode('thesis_validation')} className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${analysisMode === 'thesis_validation' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>判断验证</button>
+            </div>
+            <p className="px-2 pb-2 pt-2 text-[11px] leading-relaxed text-muted-foreground">
+              {analysisMode === 'material_analysis' ? '直接解析已有资料，提取事实与各方观点，比较共识、分歧及其来源，不要求先写个人判断。' : '从你的初步判断出发，寻找支持证据、反方证据、关键假设和证伪条件。'}
             </p>
           </div>
 
@@ -201,17 +209,17 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
 
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-muted-foreground mb-1.5 block">股票代码</label>
+                <label className="text-xs text-muted-foreground mb-1.5 block">证券代码 <span className="text-[10px]">（与公司名称二选一）</span></label>
                 <input
                   type="text"
                   value={stockCode}
                   onChange={e => setStockCode(e.target.value)}
-                  placeholder="例：600519"
+                  placeholder="例：600519 / AAPL / 7203"
                   className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground mb-1.5 block">公司名称</label>
+                <label className="text-xs text-muted-foreground mb-1.5 block">公司名称 <span className="text-[10px]">（与证券代码二选一）</span></label>
                 <input
                   type="text"
                   value={companyName}
@@ -220,22 +228,12 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
                   className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1.5 block">所属行业</label>
-                <input
-                  type="text"
-                  value={industry}
-                  onChange={e => setIndustry(e.target.value)}
-                  placeholder="例：白酒 / 消费品"
-                  className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-muted-foreground mb-1.5 block">研究目的</label><input value={researchObjective} onChange={e => setResearchObjective(e.target.value)} placeholder="例：验证现金流质量" className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" /></div>
-                <div><label className="text-xs text-muted-foreground mb-1.5 block">投资期限</label><input value={investmentHorizon} onChange={e => setInvestmentHorizon(e.target.value)} className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" /></div>
+                <div className={analysisMode === 'material_analysis' ? 'col-span-2' : ''}><label className="text-xs text-muted-foreground mb-1.5 block">研究目的 <span className="text-[10px]">（选填）</span></label><input value={researchObjective} onChange={e => setResearchObjective(e.target.value)} placeholder="例：重点了解多方观点分歧" className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" /></div>
+                {analysisMode === 'thesis_validation' && <div><label className="text-xs text-muted-foreground mb-1.5 block">投资期限</label><input value={investmentHorizon} onChange={e => setInvestmentHorizon(e.target.value)} className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" /></div>}
               </div>
-              <div><label className="text-xs text-muted-foreground mb-1.5 block">初步判断</label><Textarea value={initialView} onChange={e => setInitialView(e.target.value)} placeholder="写下当前判断，后续系统会主动寻找反证" className="min-h-20 bg-input text-sm" /></div>
-              <div><label className="text-xs text-muted-foreground mb-1.5 block">最想验证的问题</label><Textarea value={keyQuestion} onChange={e => setKeyQuestion(e.target.value)} placeholder="例：资本开支是否会侵蚀自由现金流？" className="min-h-20 bg-input text-sm" /></div>
+              {analysisMode === 'thesis_validation' && <div><label className="text-xs text-muted-foreground mb-1.5 block">初步判断 <span className="text-destructive">*</span></label><Textarea value={initialView} onChange={e => setInitialView(e.target.value)} placeholder="写下当前判断，系统会主动寻找验证与反证" className="min-h-20 bg-input text-sm" /></div>}
+              <div><label className="text-xs text-muted-foreground mb-1.5 block">最想验证的问题 <span className="text-[10px]">（选填）</span></label><Textarea value={keyQuestion} onChange={e => setKeyQuestion(e.target.value)} placeholder="例：不同研报对增长持续性的判断为什么不同？" className="min-h-20 bg-input text-sm" /></div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1.5 block">输出语言</label>
                 <select
@@ -306,10 +304,10 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
             </div>
             <button
               onClick={handleStart}
-              disabled={!stockCode || !companyName || filledCount === 0}
+              disabled={(!stockCode.trim() && !companyName.trim()) || filledCount === 0 || (analysisMode === 'thesis_validation' && !initialView.trim())}
               className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              开始 AI 研究分析
+              {analysisMode === 'material_analysis' ? '开始解析资料' : '开始验证判断'}
             </button>
             <p className="mt-2 text-center text-[11px] text-muted-foreground">
               本工具仅作为研究训练用途，不构成投资建议
@@ -329,7 +327,7 @@ export function InputPanel({ onStartAnalysis, projectId, initialCompany }: Input
             ref={fileRef}
             type="file"
             accept=".txt,.md,.csv,.docx,.xlsx,.pdf,.png,.jpg,.jpeg,.webp,.mp3,.m4a,.wav,.mp4"
-            multiple={activeType === 'sellside'}
+            multiple
             className="hidden"
             onChange={handleFileChange}
           />

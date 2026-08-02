@@ -6,6 +6,7 @@ import { Progress } from '@/components/ui/progress'
 import { analyzeCompany, type AnalyzeResult, type BackendAgentOutput } from '@/lib/api'
 
 export interface AnalysisData {
+  analysisMode: 'material_analysis' | 'thesis_validation'
   stockCode: string
   companyName: string
   industry: string
@@ -105,28 +106,29 @@ export function AnalysisPanel({ data, onComplete }: AnalysisPanelProps) {
   const [isComplete, setIsComplete] = useState(false)
   const [started, setStarted] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [apiError, setApiError] = useState<string | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalyzeResult | null>(null)
 
+  useEffect(() => {
+    if (!started || isComplete || apiError) return
+    const timer = window.setInterval(() => setElapsedSeconds(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [started, isComplete, apiError])
+
   const startAnalysis = () => {
     setStarted(true)
+    setElapsedSeconds(0)
     setApiError(null)
     runSteps()
   }
 
   const runSteps = async () => {
     try {
-      for (let idx = 0; idx < agentSteps.length; idx++) {
-        setCurrentStep(idx)
-        setExpandedStep(agentSteps[idx].id)
-        setProgress(Math.round((idx / agentSteps.length) * 100))
-        setSteps(prev => prev.map((s, i) => ({
-          ...s,
-          status: i === idx ? 'running' : i < idx ? 'done' : 'pending',
-        })))
-        await new Promise(resolve => setTimeout(resolve, 350))
-      }
-
+      setCurrentStep(0)
+      setExpandedStep('planning')
+      setProgress(8)
+      setSteps(agentSteps.map(step => ({ ...step, status: 'pending' as const })))
       const result = await analyzeCompany(data)
       setAnalysisResult(result)
       setSteps(stepsFromBackendResult(result))
@@ -174,8 +176,8 @@ export function AnalysisPanel({ data, onComplete }: AnalysisPanelProps) {
   return (
     <div className="mx-auto max-w-screen-2xl px-6 py-8">
       <div className="grid grid-cols-12 gap-6">
-        <div className="col-span-4 rounded-lg border border-border bg-card p-5"><div className="flex items-start justify-between"><div><div className="text-lg font-semibold text-foreground">{data.companyName}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{data.stockCode} · {data.industry}</div></div><Badge className={isComplete ? 'border-success/30 bg-success/10 text-success' : 'border-primary/30 bg-primary/10 text-primary'}>{isComplete ? '研究底稿已更新' : started ? '正在处理' : '待启动'}</Badge></div><div className="mt-5 text-xs text-muted-foreground">研究目的</div><div className="mt-1 text-sm text-foreground">{data.researchObjective || '证据驱动的买方研究'}</div><div className="mt-4 text-xs text-muted-foreground">核心问题</div><div className="mt-1 text-sm leading-relaxed text-foreground">{data.keyQuestion || '什么证据支持或推翻当前判断？'}</div>{!started && <button onClick={startAnalysis} className="mt-6 w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">开始研究</button>}</div>
-        <div className="col-span-8 rounded-lg border border-border bg-card p-6"><div className="flex items-center justify-between"><div className="text-sm font-semibold text-foreground">研究资料处理</div><span className="font-mono text-xs text-primary">{progress}%</span></div><Progress value={progress} className="mt-3 h-1.5" /><div className="mt-6 grid grid-cols-4 gap-3">{['资料标准化', '证据与关系', '基本面与反证', '证据门禁'].map((label, index) => { const threshold = (index + 1) * 25; const done = progress >= threshold; const active = progress < threshold && progress >= index * 25; return <div key={label} className={`rounded-md border p-3 ${done ? 'border-success/30 bg-success/5' : active ? 'border-primary/40 bg-primary/5' : 'border-border bg-secondary/20'}`}><div className={`text-xs font-medium ${done ? 'text-success' : active ? 'text-primary' : 'text-muted-foreground'}`}>{label}</div><div className="mt-1 text-[10px] text-muted-foreground">{done ? '完成' : active ? '处理中' : '等待'}</div></div> })}</div><div className="mt-6 grid grid-cols-3 gap-3">{data.materials.filter(item => item.status === 'ready').map(item => <div key={item.id} className="rounded-md border border-border bg-secondary/20 p-3"><div className="truncate text-xs text-foreground">{item.type}</div><div className="mt-1 text-[10px] text-muted-foreground">已加入资料包</div></div>)}</div>{apiError && <div className="mt-5 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{apiError}</div>}{isComplete && <div className="mt-5 rounded-md border border-success/30 bg-success/5 p-4 text-sm text-success">资料、证据图谱和研究地图已更新。</div>}</div>
+        <div className="col-span-4 rounded-lg border border-border bg-card p-5"><div className="flex items-start justify-between"><div><div className="text-lg font-semibold text-foreground">{data.companyName || data.stockCode}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{data.stockCode || '无证券代码'} · {data.analysisMode === 'material_analysis' ? '资料解析' : '判断验证'}</div></div><Badge className={isComplete ? 'border-success/30 bg-success/10 text-success' : 'border-primary/30 bg-primary/10 text-primary'}>{isComplete ? '研究底稿已更新' : started ? '正在处理' : '待启动'}</Badge></div><div className="mt-5 text-xs text-muted-foreground">研究目的</div><div className="mt-1 text-sm text-foreground">{data.researchObjective || (data.analysisMode === 'material_analysis' ? '解析资料中的事实、观点、共识、分歧与证据缺口' : '验证并反证用户初步判断')}</div><div className="mt-4 text-xs text-muted-foreground">关注问题</div><div className="mt-1 text-sm leading-relaxed text-foreground">{data.keyQuestion || (data.analysisMode === 'material_analysis' ? '由系统根据上传资料识别重点问题' : '系统将围绕初步判断寻找支持与反方证据')}</div>{!started && <button onClick={startAnalysis} className="mt-6 w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">开始研究</button>}</div>
+        <div className="col-span-8 rounded-lg border border-border bg-card p-6"><div className="flex items-center justify-between"><div><div className="text-sm font-semibold text-foreground">研究资料处理</div>{started && !isComplete && !apiError && <div className="mt-1 text-[11px] text-muted-foreground">正在解析文件并执行证据抽取、专项分析、反证审查和质量门禁。长文档通常需要数分钟。</div>}</div><span className="font-mono text-xs text-primary">{isComplete ? '完成' : started ? `${String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}:${String(elapsedSeconds % 60).padStart(2, '0')}` : '待启动'}</span></div><Progress value={progress} className={`mt-3 h-1.5 ${started && !isComplete ? 'animate-pulse' : ''}`} /><div className="mt-6 grid grid-cols-4 gap-3">{['资料标准化', '证据与关系', '基本面与反证', '证据门禁'].map(label => { const done = isComplete; const active = started && !isComplete && !apiError; return <div key={label} className={`rounded-md border p-3 ${done ? 'border-success/30 bg-success/5' : active ? 'border-primary/30 bg-primary/5' : 'border-border bg-secondary/20'}`}><div className={`text-xs font-medium ${done ? 'text-success' : active ? 'text-primary' : 'text-muted-foreground'}`}>{label}</div><div className="mt-1 text-[10px] text-muted-foreground">{done ? '已按后端结果完成' : active ? '后台执行中' : apiError ? '未完成' : '等待启动'}</div></div> })}</div><div className="mt-6 grid grid-cols-3 gap-3">{data.materials.filter(item => item.status === 'ready').map(item => <div key={item.id} className="rounded-md border border-border bg-secondary/20 p-3"><div className="truncate text-xs text-foreground">{item.type}</div><div className="mt-1 text-[10px] text-muted-foreground">已加入资料包</div></div>)}</div>{apiError && <div className="mt-5 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{apiError}</div>}{isComplete && <div className="mt-5 rounded-md border border-success/30 bg-success/5 p-4 text-sm text-success">资料、证据图谱和研究地图已更新。各阶段状态来自本次后端真实运行结果。</div>}</div>
       </div>
     </div>
   )

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import hashlib
 import re
 
 from .financial_parser import expected_financial_metric_names, extract_structured_financial_evidence
+from .model_pipeline import classify_material
 from .value_investing_doctrine import doctrine_findings
 from .models import (
     AgentFinding,
@@ -74,10 +76,14 @@ def run_firm_doctrine_case_retrieval(state: WorkflowState) -> AgentOutput:
 def run_material_organizer(state: WorkflowState) -> AgentOutput:
     documents: list[SourceDocument] = []
     for raw in state.raw_materials:
+        source_key = hashlib.sha256(f"{raw.file_name or raw.title}\n{raw.content}".encode("utf-8")).hexdigest()[:10]
+        detected_source_type, detected_confidence = classify_material(raw)
+        source_type = detected_source_type if detected_confidence >= 0.7 else raw.source_type
         documents.append(
             SourceDocument(
+                source_id=f"SRC-{source_key}",
                 title=raw.title,
-                source_type=raw.source_type,
+                source_type=source_type,
                 file_name=raw.file_name,
                 url=raw.url,
                 usage_rights_confirmed=raw.usage_rights_confirmed,

@@ -1,12 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import { Plus } from 'lucide-react'
 import type { AuthUser } from '@/lib/api'
 
 interface NavHeaderProps {
   activeTab: string
   onTabChange: (tab: string) => void
-  onBackToHome: () => void
   isLoggedIn: boolean
   user: AuthUser | null
   hasAnalysisData: boolean
@@ -14,12 +14,12 @@ interface NavHeaderProps {
   onSignup: () => void
   onLogout: () => void
   onDeleteAccount: (password: string) => Promise<void>
+  onNewResearch: () => void
 }
 
 export function NavHeader({
   activeTab,
   onTabChange,
-  onBackToHome,
   isLoggedIn,
   user,
   hasAnalysisData,
@@ -27,6 +27,7 @@ export function NavHeader({
   onSignup,
   onLogout,
   onDeleteAccount,
+  onNewResearch,
 }: NavHeaderProps) {
   const [showAccountMenu, setShowAccountMenu] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -75,11 +76,7 @@ export function NavHeader({
       <div className="mx-auto max-w-screen-2xl px-6">
         <div className="flex h-14 items-center justify-between gap-6">
 
-          {/* Logo — clickable to go back to home */}
-          <button
-            onClick={onBackToHome}
-            className="flex items-center gap-2.5 shrink-0 transition-opacity hover:opacity-80"
-          >
+          <div className="flex items-center gap-2.5 shrink-0" aria-label="Research Coach">
             <div
               className="flex h-6 w-6 items-center justify-center rounded"
               style={{ backgroundColor: 'oklch(0.65 0.14 195)' }}
@@ -92,7 +89,7 @@ export function NavHeader({
             <span className="text-sm font-semibold" style={{ color: 'oklch(0.93 0.005 240)' }}>
               Research Coach
             </span>
-          </button>
+          </div>
 
           {/* Nav tabs */}
           <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
@@ -132,6 +129,15 @@ export function NavHeader({
 
           {/* Right: auth state */}
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onNewResearch}
+              className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/5"
+              style={{ color: 'oklch(0.75 0.01 240)', borderColor: 'oklch(0.25 0.01 240)' }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              新建研究
+            </button>
             {isLoggedIn ? (
               <>
                 <button

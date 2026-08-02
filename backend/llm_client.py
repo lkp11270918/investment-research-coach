@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import urllib.error
 import urllib.request
@@ -8,6 +9,7 @@ from time import perf_counter
 from typing import Any
 
 from .config import Settings, get_settings
+from .config import PROJECT_ROOT
 from .models import ModelUsageRecord
 
 
@@ -40,6 +42,12 @@ def _record_usage(payload: dict[str, Any], model: str, endpoint: str, latency_ms
     input_tokens = int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
     output_tokens = int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
     records.append(ModelUsageRecord(model_name=model, endpoint=endpoint, input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=int(usage.get("total_tokens", input_tokens + output_tokens) or input_tokens + output_tokens), latency_ms=latency_ms))
+
+
+def _record_cache_hit(model: str) -> None:
+    records = _usage.get()
+    if records is not None:
+        records.append(ModelUsageRecord(model_name=model, endpoint="responses_cache", latency_ms=0))
 
 
 def _extract_text(response_payload: dict[str, Any]) -> str:
@@ -94,6 +102,22 @@ class OpenAIClient:
 
         selected_model = model or self.settings.openai_model
         _check_budget(self.settings)
+        cache_payload = {
+            "version": "json-v1",
+            "model": selected_model,
+            "system_prompt": system_prompt,
+            "user_payload": user_payload,
+            "temperature": temperature,
+        }
+        cache_key = hashlib.sha256(json.dumps(cache_payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        cache_path = PROJECT_ROOT / "data" / "cache" / "model_json" / f"{cache_key}.json"
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            if isinstance(cached, dict):
+                _record_cache_hit(selected_model)
+                return cached
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            pass
         body = {
             "model": selected_model,
             "input": [
@@ -132,7 +156,15 @@ class OpenAIClient:
         if not text:
             raise LLMError("OpenAI API returned no output text.")
         _record_usage(payload, selected_model, "responses", round((perf_counter() - started) * 1000))
-        return _extract_json(text)
+        result = _extract_json(text)
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = cache_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(cache_path)
+        except OSError:
+            pass
+        return result
 
     def embed(self, texts: list[str], *, model: str | None = None) -> tuple[list[list[float]], int]:
         if not self.settings.openai_api_key:

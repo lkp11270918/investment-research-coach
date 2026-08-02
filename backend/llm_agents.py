@@ -714,9 +714,21 @@ def run_material_organizer_llm(state: WorkflowState, client: OpenAIClient | None
     )
 
 
-def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None = None) -> AgentOutput:
+def run_evidence_extractor_llm(
+    state: WorkflowState,
+    client: OpenAIClient | None = None,
+    *,
+    content_chars: int = 6000,
+    max_blocks_per_document: int = 200,
+) -> AgentOutput:
     client = client or OpenAIClient()
-    structured_financial_evidence = extract_structured_financial_evidence(state.source_documents)
+    structured_financial_evidence = extract_structured_financial_evidence(
+        [
+            document
+            for document in state.source_documents
+            if document.source_type in {SourceType.FINANCIAL_TABLE, SourceType.ANNUAL_REPORT_SUMMARY}
+        ]
+    )
     if not client.available:
         return run_stub_evidence_extractor(state)
 
@@ -732,8 +744,8 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
                         "source_type": doc.source_type.value,
                         "period_covered": doc.period_covered,
                         "url": doc.url,
-                        "content": doc.content[:6000],
-                        "blocks": [{"block_id": block.block_id, "content": block.content, "page": block.page, "sheet": block.sheet, "row": block.row, "region": block.region, "speaker": block.speaker, "start_seconds": block.start_seconds, "end_seconds": block.end_seconds, "extraction_method": block.extraction_method, "requires_confirmation": block.requires_confirmation, "review_status": block.review_status} for block in doc.blocks[:200] if block.review_status != "rejected"],
+                        "content": doc.content[:content_chars],
+                        "blocks": [{"block_id": block.block_id, "content": block.content, "page": block.page, "sheet": block.sheet, "row": block.row, "region": block.region, "speaker": block.speaker, "start_seconds": block.start_seconds, "end_seconds": block.end_seconds, "extraction_method": block.extraction_method, "requires_confirmation": block.requires_confirmation, "review_status": block.review_status} for block in doc.blocks[:max_blocks_per_document] if block.review_status != "rejected"],
                     }
                     for doc in state.source_documents
                 ],
@@ -762,6 +774,8 @@ def run_evidence_extractor_llm(state: WorkflowState, client: OpenAIClient | None
         statement = str(raw.get("statement") or "")
         local_category, _ = classify_statement(statement)
         category = _category(raw.get("category")) if raw.get("category") else local_category
+        if source.source_type == SourceType.SELL_SIDE_SUMMARY:
+            category = EvidenceCategory.SELL_SIDE_OPINION
         refs = [
             SourceRef(
                 source_id=source_id,
@@ -887,7 +901,6 @@ def run_financial_quality_dividend_llm(state: WorkflowState, client: OpenAIClien
         finding = _finding(raw)
         finding.evidence_ids = [item for item in finding.evidence_ids if item in valid_evidence_ids]
         findings.append(finding)
-
     evidence_ids = sorted({evidence_id for finding in findings for evidence_id in finding.evidence_ids})
     missing_materials = [str(item) for item in result.get("missing_materials", [])]
     confidence = _confidence(result.get("confidence"))
@@ -1124,6 +1137,11 @@ def run_management_view_comparison_llm(state: WorkflowState, client: OpenAIClien
         finding = _finding(raw)
         finding.evidence_ids = [item for item in finding.evidence_ids if item in valid_evidence_ids]
         findings.append(finding)
+    fallback_by_title = {finding.title: finding for finding in rule_comparison.findings}
+    for finding in findings:
+        fallback_finding = fallback_by_title.get(finding.title)
+        if not finding.evidence_ids and fallback_finding:
+            finding.evidence_ids = list(fallback_finding.evidence_ids)
     if len(sell_side_documents) >= 2:
         required_titles = ("卖方共同点", "卖方分歧点", "分歧来源", "核心假设差异", "买方需独立验证的问题")
         existing_titles = {finding.title for finding in findings}

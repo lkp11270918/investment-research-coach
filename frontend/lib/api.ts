@@ -463,6 +463,7 @@ export async function ingestWebUrl(url: string, materialId: string): Promise<Ing
 }
 
 export async function analyzeCompany(input: {
+  analysisMode: 'material_analysis' | 'thesis_validation'
   stockCode: string
   companyName: string
   industry: string
@@ -476,9 +477,9 @@ export async function analyzeCompany(input: {
 }): Promise<AnalyzeResult> {
   const companyProfile: CompanyProfile = {
     ticker: input.stockCode,
-    company_name: input.companyName,
+    company_name: input.companyName || input.stockCode,
     industry: input.industry || '未指定行业',
-    market: 'A股',
+    market: undefined,
     research_language: input.outputLanguage || 'auto',
     user_mode: 'to_c',
   }
@@ -509,7 +510,7 @@ export async function analyzeCompany(input: {
   }
   formData.append('company_profile', JSON.stringify(companyProfile))
   formData.append('text_materials', JSON.stringify(textMaterials))
-  formData.append('research_context', JSON.stringify({ research_objective: input.researchObjective, investment_horizon: input.investmentHorizon, initial_view: input.initialView, key_question: input.keyQuestion }))
+  formData.append('research_context', JSON.stringify({ research_mode: input.analysisMode, research_objective: input.researchObjective, investment_horizon: input.investmentHorizon, initial_view: input.initialView, key_question: input.keyQuestion }))
   formData.append('options', JSON.stringify({ skip_post_gate: false, enable_parallel: true }))
   for (const material of fileMaterials) {
     formData.append('material_ids', material.materialId)
