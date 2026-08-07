@@ -311,6 +311,8 @@ export type DefenseSession = {
 }
 
 export type ResearchJudgment = {
+  document_views: Array<{ source_id: string; title: string; main_view: string; supporting_points: string[]; evidence_ids: string[] }>
+  core_assumptions: Array<{ statement: string; source_ids: string[]; evidence_ids: string[]; verification_question?: string | null }>
   view_points: Array<{ point_type: string; topic: string; detail: string; evidence_ids: string[]; source_ids: string[]; assumption_difference?: string | null; buyer_verification_question?: string | null }>
   red_team_challenges: Array<{ challenge_id: string; title: string; mechanism: string; severity: string; evidence_ids: string[]; missing_evidence: string[]; falsification_test: string; status: string }>
   sell_side_source_count: number
@@ -368,7 +370,7 @@ export type AuthResult = {
   user: AuthUser
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '')
 const TOKEN_STORAGE_KEY = 'research_coach_access_token'
 
 export function getStoredToken(): string | null {
@@ -618,6 +620,14 @@ export async function fetchResearchProjects(): Promise<ResearchProjectSummary[]>
   const response = await fetch(`${API_BASE_URL}/api/projects`, { headers: authHeaders() })
   if (!response.ok) throw new Error(await parseError(response))
   return response.json()
+}
+
+export async function deleteResearchProject(projectId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
 }
 
 export async function fetchResearchProject(projectId: string): Promise<ResearchProjectDetail> {

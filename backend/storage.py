@@ -761,6 +761,37 @@ def update_research_project(user_id: str, project_id: str, request: ResearchProj
     return get_research_project(user_id, project_id)
 
 
+def delete_research_project(user_id: str, project_id: str) -> bool:
+    if not project_belongs_to_user(user_id, project_id):
+        return False
+    database_url = get_settings().database_url
+    project_tables = (
+        "research_behavior_events",
+        "defense_sessions",
+        "memo_versions",
+        "research_tasks",
+        "thesis_versions",
+        "research_map_versions",
+        "project_valuation_assumptions",
+        "evidence_graph_versions",
+        "project_materials",
+        "project_evidence_graphs",
+        "research_runs",
+        "research_projects",
+    )
+    if _is_postgres_url(database_url):
+        import psycopg
+
+        with psycopg.connect(database_url) as conn:
+            for table in project_tables:
+                conn.execute(f"DELETE FROM {table} WHERE project_id=%s AND user_id=%s", (project_id, user_id))
+    else:
+        with _sqlite_connection(database_url) as conn:
+            for table in project_tables:
+                conn.execute(f"DELETE FROM {table} WHERE project_id=? AND user_id=?", (project_id, user_id))
+    return True
+
+
 def project_belongs_to_user(user_id: str, project_id: str) -> bool:
     return get_research_project(user_id, project_id) is not None
 

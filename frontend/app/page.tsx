@@ -11,7 +11,7 @@ import { ReviewPanel } from '@/components/review-panel'
 import { ResearchWorkspacePanel } from '@/components/research-workspace-panel'
 import { CapabilityPanel } from '@/components/capability-panel'
 import type { AnalyzeResult, AuthUser, BackendMemo } from '@/lib/api'
-import { clearStoredToken, deleteCurrentAccount, fetchCurrentUser, fetchResearchProjects, getStoredToken } from '@/lib/api'
+import { clearStoredToken, deleteCurrentAccount, fetchCurrentUser, getStoredToken } from '@/lib/api'
 
 type AppView = 'landing' | 'app'
 type AuthMode = 'login' | 'signup'
@@ -34,13 +34,13 @@ export default function Page() {
     const token = getStoredToken()
     if (!token) return
     fetchCurrentUser(token)
-      .then(async user => {
+      .then(user => {
         setCurrentUser(user)
         setIsLoggedIn(true)
-        const projects = await fetchResearchProjects()
-        const firstProjectId = projects[0]?.project_id || null
-        setCurrentProjectId(firstProjectId)
-        setShowIntake(!firstProjectId)
+        setView('app')
+        setActiveTab('map')
+        setCurrentProjectId(null)
+        setShowIntake(false)
       })
       .catch(() => {
         clearStoredToken()
@@ -64,16 +64,8 @@ export default function Page() {
     setAuthModal(null)
     setView('app')
     setActiveTab('map')
-    setShowIntake(true)
-    try {
-      const projects = await fetchResearchProjects()
-      const firstProjectId = projects[0]?.project_id || null
-      setCurrentProjectId(firstProjectId)
-      setShowIntake(!firstProjectId)
-    } catch {
-      setCurrentProjectId(null)
-      setShowIntake(true)
-    }
+    setCurrentProjectId(null)
+    setShowIntake(false)
   }
 
   const handleNewResearch = () => {

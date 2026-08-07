@@ -20,12 +20,31 @@ class ProductionGuardMiddleware(BaseHTTPMiddleware):
         length = int(request.headers.get("content-length", "0") or 0)
         if length > settings.max_upload_bytes:
             return JSONResponse({"detail": "请求文件超过允许大小", "request_id": request_id}, status_code=413)
-        key = request.client.host if request.client else "unknown"
+        forwarded_for = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+        client_host = forwarded_for or (request.client.host if request.client else "unknown")
+        path = request.url.path
+        if path.startswith("/api/auth/"):
+            group = "auth"
+            limit = max(10, settings.rate_limit_per_minute // 3)
+        elif path in {"/api/analyze", "/api/analyze-files", "/api/review"}:
+            group = "analysis"
+            limit = settings.rate_limit_per_minute
+        elif request.method in {"GET", "HEAD", "OPTIONS"}:
+            group = "read"
+            limit = max(180, settings.rate_limit_per_minute * 3)
+        else:
+            group = "write"
+            limit = max(60, settings.rate_limit_per_minute)
+        key = f"{client_host}:{group}"
         now = time()
         bucket = self.buckets[key]
         while bucket and bucket[0] < now - 60: bucket.popleft()
-        if len(bucket) >= settings.rate_limit_per_minute:
-            return JSONResponse({"detail": "请求过于频繁，请稍后再试", "request_id": request_id}, status_code=429)
+        if len(bucket) >= limit:
+            return JSONResponse(
+                {"detail": "请求过于频繁，请稍后再试", "request_id": request_id},
+                status_code=429,
+                headers={"Retry-After": "60"},
+            )
         bucket.append(now)
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id

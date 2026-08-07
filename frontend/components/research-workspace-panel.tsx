@@ -1,15 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, FileSearch, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, FileSearch, FolderOpen, GitCompareArrows, LayoutGrid, Lightbulb, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { ValuationPanel } from '@/components/valuation-panel'
 import {
   answerDefense,
+  deleteResearchProject,
   fetchDefenseSessions,
   fetchEvidenceGraph,
   fetchEvidenceGraphHistory,
@@ -49,7 +49,7 @@ interface ResearchWorkspacePanelProps {
   section?: 'map' | 'evidence' | 'thesis' | 'defense'
   onNewResearch?: () => void
   onAddMaterials?: (projectId: string, company: { stockCode: string; companyName: string; industry: string; outputLanguage?: 'auto' | 'zh' | 'en' }) => void
-  onProjectChange?: (projectId: string) => void
+  onProjectChange?: (projectId: string | null) => void
 }
 
 const emptyDraft: ThesisDraft = {
@@ -86,6 +86,9 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
   const [judgment, setJudgment] = useState<ResearchJudgment | null>(null)
   const [quality, setQuality] = useState<ResearchQuality | null>(null)
   const [projects, setProjects] = useState<ResearchProjectSummary[]>([])
+  const [projectsLoading, setProjectsLoading] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<ResearchProjectSummary | null>(null)
+  const [deletingProject, setDeletingProject] = useState(false)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(projectId)
   const [graph, setGraph] = useState<EvidenceGraph | null>(null)
   const [theses, setTheses] = useState<ThesisVersion[]>([])
@@ -100,18 +103,42 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return
+    setDeletingProject(true)
+    setError(null)
+    try {
+      await deleteResearchProject(projectToDelete.project_id)
+      setProjects(previous => previous.filter(project => project.project_id !== projectToDelete.project_id))
+      if (selectedProjectId === projectToDelete.project_id) {
+        setSelectedProjectId(null)
+        onProjectChange?.(null)
+      }
+      setProjectToDelete(null)
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : '项目删除失败')
+    } finally {
+      setDeletingProject(false)
+    }
+  }
+
   useEffect(() => {
     if (!isLoggedIn) return
     let cancelled = false
+    setProjectsLoading(true)
     fetchResearchProjects()
       .then(items => {
         if (cancelled) return
         setProjects(items)
-        setSelectedProjectId(current => projectId || current || items[0]?.project_id || null)
       })
       .catch(error => !cancelled && setError(error instanceof Error ? error.message : '研究项目加载失败'))
+      .finally(() => !cancelled && setProjectsLoading(false))
     return () => { cancelled = true }
-  }, [isLoggedIn, projectId])
+  }, [isLoggedIn])
+
+  useEffect(() => {
+    setSelectedProjectId(projectId)
+  }, [projectId])
 
   useEffect(() => {
     if (!isLoggedIn || !selectedProjectId) return
@@ -157,8 +184,67 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
   if (!isLoggedIn) {
     return <WorkspaceEmpty title="登录后使用研究工作台" description="研究地图、证据确认、Thesis版本和投委会答辩需要沉淀到你的研究项目。" action="登录" onAction={onLogin} />
   }
+  if (projectsLoading) {
+    return <div className="mx-auto max-w-screen-xl px-6 py-8"><div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">正在加载 Research Map...</div></div>
+  }
   if (!selectedProjectId) {
-    return <WorkspaceEmpty title="还没有可用的研究项目" description="创建第一个研究项目，填写公司信息并上传资料后，Research Map、Evidence 和 Thesis 将自动建立。" action="新建研究项目" onAction={onNewResearch} />
+    if (!projects.length) {
+      return <WorkspaceEmpty title="还没有可用的研究项目" description="创建第一个研究项目，填写公司信息并上传资料后，Research Map、Evidence 和 Thesis 将自动建立。" action="新建研究项目" onAction={onNewResearch} />
+    }
+    return (
+      <div className="mx-auto max-w-screen-xl px-6 py-8">
+        <div className="mb-6 flex items-end justify-between gap-4">
+          <div>
+            <div className="mb-1 text-xs font-medium uppercase tracking-wider text-primary">Research Map</div>
+            <h1 className="text-xl font-semibold text-foreground">研究项目</h1>
+            <p className="mt-1 text-sm text-muted-foreground">选择一个项目继续研究，或建立新的公司研究。</p>
+          </div>
+          {onNewResearch && <Button size="sm" onClick={onNewResearch}><Plus className="h-3.5 w-3.5" />新建研究</Button>}
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          {projects.map(project => (
+            <div key={project.project_id} className="group relative min-h-36 rounded-lg border border-border bg-card transition-colors hover:border-primary/50 hover:bg-secondary/60">
+              <button
+                type="button"
+                onClick={() => { setSelectedProjectId(project.project_id); onProjectChange?.(project.project_id) }}
+                className="h-full w-full p-5 text-left"
+              >
+                <div className="mb-5 flex items-start justify-between gap-3 pr-8">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-secondary text-primary"><FolderOpen className="h-4 w-4" /></div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+                </div>
+                <div className="text-sm font-semibold text-foreground">{project.company_profile.company_name}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{project.company_profile.ticker || '未填写股票代码'} · {project.run_count} 次研究</div>
+                <div className="mt-3 font-mono text-[10px] text-muted-foreground">{project.project_id}</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setProjectToDelete(project)}
+                className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                aria-label={`删除${project.company_profile.company_name}项目`}
+                title="删除项目"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+        {error && <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+        {projectToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
+            <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-2xl">
+              <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-md bg-destructive/10 text-destructive"><Trash2 className="h-4 w-4" /></div>
+              <h2 className="text-base font-semibold text-foreground">删除“{projectToDelete.company_profile.company_name}”项目？</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">该项目的资料、证据、Research Map、Thesis、Memo、任务与历史记录将被永久删除，此操作无法撤销。</p>
+              <div className="mt-6 flex justify-end gap-2">
+                <Button variant="outline" size="sm" disabled={deletingProject} onClick={() => setProjectToDelete(null)}>取消</Button>
+                <Button variant="destructive" size="sm" disabled={deletingProject} onClick={handleDeleteProject}>{deletingProject ? '正在删除...' : '确认删除'}</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   const activeProject = projects.find(project => project.project_id === selectedProjectId)
@@ -166,6 +252,27 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
   const evidenceNodes = graph?.nodes.filter(node => node.evidence_id) || []
   const activeDefense = [...defenses].reverse().find(session => session.status === 'active')
   const currentTurn = activeDefense?.turns[activeDefense.turns.length - 1]
+  const analyzedQuestions = researchMap?.questions.filter(question => question.status !== 'unanswered') || []
+  const openQuestions = researchMap?.questions.filter(question => question.status !== 'answered') || []
+  const viewPoints = judgment?.view_points || []
+  const documentViews = judgment?.document_views || []
+  const coreAssumptions = judgment?.core_assumptions || []
+  const isComparisonLimitation = (detail: string) => /(?:资料不足|尚未|无法确认|未识别|不能把并列摘要)/.test(detail)
+  const comparisonLimitations = viewPoints.filter(point => isComparisonLimitation(`${point.topic}${point.detail}`))
+  const substantiveViewPoints = viewPoints.filter(point => !isComparisonLimitation(`${point.topic}${point.detail}`))
+  const consensusPoints = substantiveViewPoints.filter(point => point.point_type === 'consensus' || /(?:共同点|共识)/.test(point.topic))
+  const divergencePoints = substantiveViewPoints.filter(point => point.point_type === 'divergence' && !/(?:来源|假设)/.test(point.topic))
+  const divergenceSourcePoints = substantiveViewPoints.filter(point => /(?:分歧来源|假设差异)/.test(point.topic))
+  const individualReportPoints = substantiveViewPoints.filter(point => point.topic.startsWith('单份卖方观点｜'))
+  const verificationPoints = substantiveViewPoints.filter(point => point.point_type === 'buyer_question' || /(?:独立验证|待验证)/.test(point.topic))
+  const otherConclusionPoints = substantiveViewPoints.filter(point => !consensusPoints.includes(point) && !divergencePoints.includes(point) && !divergenceSourcePoints.includes(point) && !individualReportPoints.includes(point) && !verificationPoints.includes(point))
+  const comparisonSections: Array<{ label: string; points: typeof viewPoints }> = [
+    { label: '共识', points: consensusPoints },
+    { label: '核心分歧', points: divergencePoints },
+    { label: '分歧来源', points: divergenceSourcePoints },
+  ]
+  const riskCount = judgment?.red_team_challenges.length || 0
+  const contradictionCount = graph?.edges.filter(edge => edge.relation === 'contradicts').length || 0
 
   const handleReview = async (node: EvidenceGraphNode, status: EvidenceGraphNode['verification_status']) => {
     if (!selectedProjectId) return
@@ -263,6 +370,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
           <p className="mt-1 text-sm text-muted-foreground">从研究问题、证据确认到投资逻辑和答辩的完整训练过程。</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => { setSelectedProjectId(null); onProjectChange?.(null) }}><LayoutGrid className="h-3.5 w-3.5" />全部项目</Button>
           {onNewResearch && <Button variant="outline" size="sm" onClick={onNewResearch}><Plus className="h-3.5 w-3.5" />新建研究</Button>}
           {onAddMaterials && activeProject && <Button variant="outline" size="sm" onClick={() => onAddMaterials(activeProject.project_id, { stockCode: activeProject.company_profile.ticker || '', companyName: activeProject.company_profile.company_name, industry: activeProject.company_profile.industry, outputLanguage: activeProject.company_profile.research_language || 'auto' })}><FileSearch className="h-3.5 w-3.5" />补充材料</Button>}
           {projects.length > 1 && (
@@ -286,22 +394,111 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
         <Tabs value={section}>
 
           <TabsContent value="map">
-            <div className="mb-4 rounded-lg border border-border bg-card p-5">
-              <div className="mb-3 flex items-center justify-between">
-                <div><div className="text-sm font-semibold text-foreground">研究完成度</div><div className="mt-1 text-[10px] text-muted-foreground">计划 v{researchMap?.version || 1} · {mapHistoryCount} 个历史版本 · {researchMap?.planner_model}</div></div>
-                <span className="font-mono text-sm text-primary">{researchMap?.completion_rate || 0}%</span>
-              </div>
-              <Progress value={researchMap?.completion_rate || 0} />
-              {!!researchMap?.next_questions.length && (
-                <div className="mt-4 border-t border-border pt-4">
-                  <div className="mb-2 text-xs font-medium text-muted-foreground">下一步优先研究</div>
-                  {researchMap.next_questions.map(question => <div key={question} className="mt-1 text-sm text-foreground">· {question}</div>)}
+            <div className="mb-5 border-b border-border pb-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-base font-semibold text-foreground"><CheckCircle2 className="h-4 w-4 text-success" />资料分析结果</div>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">已对全部上传资料完成观点抽取、跨来源比较、分歧归因和反证检查。</p>
                 </div>
-              )}
-              {!!researchMap?.core_variables.length && <div className="mt-4 border-t border-border pt-4"><div className="mb-2 text-xs font-medium text-muted-foreground">公司核心变量</div><div className="flex flex-wrap gap-2">{researchMap.core_variables.map(item => <Badge key={item} className="border-primary/20 bg-primary/5 text-primary">{item}</Badge>)}</div></div>}
-              {!!researchMap?.material_requests.length && <div className="mt-4 text-xs text-muted-foreground">资料缺口：{researchMap.material_requests.join('、')}</div>}
+                <div className="font-mono text-[10px] text-muted-foreground">版本 v{researchMap?.version || 1} · {mapHistoryCount} 个历史版本</div>
+              </div>
             </div>
-            <div className="space-y-2">
+
+            {!!documentViews.length && <section className="mb-5">
+              <div className="mb-3"><h2 className="text-sm font-semibold text-foreground">逐篇资料观点</h2><p className="mt-1 text-xs text-muted-foreground">先看每份资料各自的主张，不依赖跨资料比较是否成功。</p></div>
+              <div className="grid grid-cols-3 gap-3">
+                {documentViews.map((view, index) => <article key={view.source_id} className="rounded-lg border border-border bg-card p-4">
+                  <div className="mb-2 flex items-start justify-between gap-3"><div className="text-xs font-medium text-primary">资料 {index + 1}</div><div className="font-mono text-[9px] text-muted-foreground">{view.evidence_ids.length} 条证据</div></div>
+                  <h3 className="line-clamp-2 text-xs font-medium leading-5 text-foreground">{view.title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-foreground">{view.main_view}</p>
+                  {!!view.supporting_points.length && <div className="mt-3 border-t border-border pt-3">{view.supporting_points.map(point => <p key={point} className="mt-1 text-xs leading-5 text-muted-foreground">· {point}</p>)}</div>}
+                </article>)}
+              </div>
+            </section>}
+
+            {!!coreAssumptions.length && <section className="mb-5">
+              <div className="mb-3 flex items-center gap-2"><Lightbulb className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">资料中的核心假设</h2></div>
+              <div className="overflow-hidden rounded-lg border border-border bg-card">
+                {coreAssumptions.map((assumption, index) => <div key={`${assumption.statement}-${index}`} className="grid grid-cols-[44px_1fr] border-b border-border last:border-b-0"><div className="bg-secondary/30 px-3 py-4 text-center font-mono text-[10px] text-muted-foreground">{String(index + 1).padStart(2, '0')}</div><div className="px-5 py-4"><p className="text-sm leading-6 text-foreground">{assumption.statement}</p>{assumption.verification_question && <p className="mt-2 text-xs leading-5 text-muted-foreground">{assumption.verification_question}</p>}</div></div>)}
+              </div>
+            </section>}
+
+            {!!substantiveViewPoints.length ? (
+              <section className="mb-5">
+                <div className="mb-3 flex items-center gap-2"><GitCompareArrows className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">多方观点比较结论</h2></div>
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                  {comparisonSections.map(({ label, points }) => {
+                    return (
+                      <div key={String(label)} className="grid grid-cols-[140px_1fr] border-b border-border last:border-b-0">
+                        <div className="bg-secondary/30 px-4 py-4 text-xs font-medium text-muted-foreground">{label}</div>
+                        <div className="space-y-3 px-5 py-4">
+                          {points.length ? points.map(point => <div key={point.topic}><p className="text-sm leading-6 text-foreground">{point.detail}</p><div className="mt-1 font-mono text-[9px] text-muted-foreground">{point.evidence_ids.length} 条证据 · {point.source_ids.length || judgment?.sell_side_source_count || 0} 个来源</div></div>) : <p className="text-xs text-muted-foreground">当前资料没有形成可追溯的{label}结论。</p>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {!!otherConclusionPoints.length && <div className="mt-5"><h3 className="mb-3 text-xs font-medium text-muted-foreground">叙事与事实对照</h3><div className="grid grid-cols-2 gap-3">{otherConclusionPoints.map(point => <div key={point.topic} className="rounded-lg border border-border bg-card p-4"><div className="text-xs font-medium text-foreground">{point.topic}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{point.detail}</p></div>)}</div></div>}
+
+                {!!verificationPoints.length && <div className="mt-4 rounded-lg border border-warning/25 bg-warning/5 p-4"><div className="text-xs font-medium text-warning">需要独立验证</div>{verificationPoints.map(point => <p key={point.topic} className="mt-2 text-sm leading-6 text-foreground">{point.detail}</p>)}</div>}
+              </section>
+            ) : <section className="mb-5 rounded-lg border border-warning/25 bg-warning/5 p-4"><div className="text-sm font-medium text-foreground">跨资料比较暂无可靠结论</div><p className="mt-1 text-xs leading-5 text-muted-foreground">上方已展示每份资料的观点和核心假设。现有资料缺少统一预测期间、关键参数或明确相反立场，因此不强行编造共识与分歧。</p></section>}
+
+            {!!evidenceNodes.length && (
+              <section className="mb-5">
+                <h2 className="mb-3 text-sm font-semibold text-foreground">关键证据</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  {evidenceNodes.slice(0, 8).map(node => (
+                    <div key={node.node_id} className="rounded-md border border-border bg-secondary/20 p-3">
+                      <div className="text-xs leading-5 text-foreground">{node.label}</div>
+                      <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[9px] text-muted-foreground"><span>{node.node_type}</span><span>{node.evidence_id}</span></div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="mb-5">
+              <div className="mb-2 text-xs font-medium text-muted-foreground">本次分析依据</div>
+              <div className="grid grid-cols-4 gap-px overflow-hidden rounded-md border border-border bg-border">
+                {[
+                  ['已处理资料', materials.length],
+                  ['可追溯证据', evidenceNodes.length],
+                  ['具体分析结论', viewPoints.length],
+                  ['风险与反证', riskCount + contradictionCount],
+                ].map(([label, value]) => <div key={String(label)} className="bg-card px-4 py-3"><div className="font-mono text-lg text-foreground">{value}</div><div className="mt-0.5 text-[10px] text-muted-foreground">{label}</div></div>)}
+              </div>
+            </section>
+
+            <section className="mb-5 rounded-lg border border-warning/25 bg-warning/5 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                <div><div className="text-sm font-medium text-foreground">当前结论的边界</div><p className="mt-1 text-xs leading-5 text-muted-foreground">当前结论只代表“这批资料中能够确认、比较和质疑的内容”，不代表公司已被完整研究。卖方共识、管理层目标和未核验预测仍需一手事实支持。</p></div>
+              </div>
+            </section>
+
+            {!!comparisonLimitations.length && <section className="mb-5"><h2 className="mb-2 text-xs font-medium text-muted-foreground">分析限制</h2>{comparisonLimitations.map(point => <div key={point.topic} className="mt-2 rounded-md border border-border bg-secondary/20 p-3"><div className="text-xs font-medium text-foreground">预测口径尚未统一</div><p className="mt-1 text-xs leading-5 text-muted-foreground">现有资料未同时提供一致的预测期间、核心参数和计算方法，对应差异暂不作定量判断。</p></div>)}</section>}
+
+            <section className="mb-5">
+              <div className="mb-3 flex items-end justify-between gap-4">
+                <div><div className="flex items-center gap-2"><Lightbulb className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">接下来可以研究什么</h2></div><p className="mt-1 text-xs text-muted-foreground">有资料就继续验证；暂时没有资料，也可先写下自己的假设和推翻条件。</p></div>
+                {onAddMaterials && activeProject && <Button variant="outline" size="sm" onClick={() => onAddMaterials(activeProject.project_id, { stockCode: activeProject.company_profile.ticker || '', companyName: activeProject.company_profile.company_name, industry: activeProject.company_profile.industry, outputLanguage: activeProject.company_profile.research_language || 'auto' })}><FileSearch className="h-3.5 w-3.5" />补充资料</Button>}
+              </div>
+              <div className="space-y-2">
+                {openQuestions.slice(0, 6).map(question => (
+                  <div key={question.question_id} className="rounded-lg border border-border bg-card p-4">
+                    <div className="flex items-start gap-3"><span className="font-mono text-[10px] text-muted-foreground">{question.question_id}</span><div className="min-w-0 flex-1"><div className="text-sm font-medium text-foreground">{question.question}</div><div className="mt-2 grid grid-cols-2 gap-4 text-xs leading-5"><div><span className="text-muted-foreground">可以补充：</span><span className="text-foreground">{question.missing_materials.join('、') || '能够交叉验证的一手资料'}</span></div><div><span className="text-muted-foreground">也可先思考：</span><span className="text-foreground">当前资料隐含了什么前提？出现什么结果会推翻它？</span></div></div></div></div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {!!researchMap?.core_variables.length && <section className="mb-5"><div className="mb-2 text-xs font-medium text-muted-foreground">当前资料涉及的核心变量</div><div className="flex flex-wrap gap-2">{researchMap.core_variables.map(item => <Badge key={item} className="border-primary/20 bg-primary/5 text-primary">{item}</Badge>)}</div></section>}
+
+            <section>
+              <div className="mb-3"><h2 className="text-sm font-semibold text-foreground">全部研究问题</h2><p className="mt-1 text-xs text-muted-foreground">{analyzedQuestions.length} 个问题已获得当前资料的回答或线索，{openQuestions.length} 个仍可继续深化。</p></div>
+              <div className="space-y-2">
               {researchMap?.questions.map(question => {
                 const status = questionStatus[question.status]
                 return (
@@ -320,7 +517,8 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
                   </div>
                 )
               })}
-            </div>
+              </div>
+            </section>
           </TabsContent>
 
           <TabsContent value="evidence">

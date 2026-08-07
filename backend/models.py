@@ -704,6 +704,21 @@ class ViewComparisonPoint(BaseModel):
     buyer_verification_question: str | None = None
 
 
+class DocumentView(BaseModel):
+    source_id: str
+    title: str
+    main_view: str
+    supporting_points: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ResearchAssumption(BaseModel):
+    statement: str
+    source_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    verification_question: str | None = None
+
+
 class RedTeamChallenge(BaseModel):
     challenge_id: str = Field(default_factory=lambda: f"RTC-{uuid4().hex[:10]}")
     title: str
@@ -716,6 +731,8 @@ class RedTeamChallenge(BaseModel):
 
 
 class ResearchJudgment(BaseModel):
+    document_views: list[DocumentView] = Field(default_factory=list)
+    core_assumptions: list[ResearchAssumption] = Field(default_factory=list)
     view_points: list[ViewComparisonPoint] = Field(default_factory=list)
     red_team_challenges: list[RedTeamChallenge] = Field(default_factory=list)
     sell_side_source_count: int = 0

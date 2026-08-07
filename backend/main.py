@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .production import ProductionGuardMiddleware, production_configuration_report
@@ -12,7 +12,7 @@ from .auth import authenticate_user, create_access_token, create_user, delete_us
 from .file_parsers import FileParseError, cross_check_multimodal_materials, parse_uploaded_file
 from .models import AnalyzeRequest, AnalyzeResponse, AuthResponse, AuthUser, CapabilityProfile, DefenseAnswerRequest, DefenseSession, DeleteAccountRequest, EvidenceEdgeReview, EvidenceGraph, EvidenceNodeReview, HealthResponse, LoginRequest, MaterialBlockReview, MemoSuggestionDecision, MemoVersion, MemoVersionCreate, ProjectMaterial, RawMaterial, RegisterRequest, ResearchBehaviorEvent, ResearchJudgment, ResearchMap, ResearchProjectCreate, ResearchProjectDetail, ResearchProjectSummary, ResearchProjectUpdate, ResearchRunDetail, ResearchRunSummary, ResearchTask, ResearchTaskUpdate, ReviewRequest, ThesisDraft, ThesisVersion, UrlIngestRequest, ValuationAssumptions, ValuationAnalysis
 from .research_map import generate_research_map
-from .storage import create_research_project, decide_memo_suggestion, get_defense_session, get_project_evidence_graph, get_research_project, get_user_run, init_research_runs_db, list_behavior_events, list_capability_profiles, list_defense_sessions, list_evidence_graph_versions, list_memo_versions, list_project_materials, list_research_map_versions, list_research_projects, list_research_tasks, list_thesis_versions, list_user_runs, project_belongs_to_user, record_behavior_event, review_evidence_for_material_block, review_project_evidence_edge, review_project_evidence_node, review_project_material_block, save_capability_profile, save_defense_session, save_memo_version, save_research_map_version, save_thesis_version, save_user_run, sync_defense_tasks, update_memo_suggestions, update_research_project, update_research_task, upsert_research_tasks, get_valuation_assumptions, save_valuation_assumptions
+from .storage import create_research_project, decide_memo_suggestion, delete_research_project, get_defense_session, get_project_evidence_graph, get_research_project, get_user_run, init_research_runs_db, list_behavior_events, list_capability_profiles, list_defense_sessions, list_evidence_graph_versions, list_memo_versions, list_project_materials, list_research_map_versions, list_research_projects, list_research_tasks, list_thesis_versions, list_user_runs, project_belongs_to_user, record_behavior_event, review_evidence_for_material_block, review_project_evidence_edge, review_project_evidence_node, review_project_material_block, save_capability_profile, save_defense_session, save_memo_version, save_research_map_version, save_thesis_version, save_user_run, sync_defense_tasks, update_memo_suggestions, update_research_project, update_research_task, upsert_research_tasks, get_valuation_assumptions, save_valuation_assumptions
 from .capability_profile import build_capability_profile
 from .defense import answer_defense, start_defense
 from .thesis_builder import assess_thesis
@@ -22,6 +22,7 @@ from .memo_coauthor import generate_memo_suggestions
 from .llm_client import OpenAIClient
 from .task_feedback import tasks_from_memo, tasks_from_research_state, tasks_from_thesis
 from .research_quality import assess_graph_quality
+from .research_judgment import build_research_judgment
 from .valuation import analyze_valuation
 
 
@@ -289,6 +290,16 @@ def archive_project(
     return detail
 
 
+@app.delete("/api/projects/{project_id}", status_code=204)
+def delete_project(
+    project_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+) -> Response:
+    if not delete_research_project(current_user.user_id, project_id):
+        raise HTTPException(status_code=404, detail="未找到该研究项目")
+    return Response(status_code=204)
+
+
 @app.get("/api/projects/{project_id}/evidence-graph", response_model=EvidenceGraph)
 def project_evidence_graph(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> EvidenceGraph:
     graph = get_project_evidence_graph(current_user.user_id, project_id)
@@ -349,7 +360,7 @@ def project_research_judgment(project_id: str, current_user: AuthUser = Depends(
     if not detail.timeline:
         return ResearchJudgment()
     latest = get_user_run(current_user.user_id, detail.timeline[-1].run_id)
-    return latest.state.research_judgment if latest else ResearchJudgment()
+    return build_research_judgment(latest.state) if latest else ResearchJudgment()
 
 @app.get("/api/projects/{project_id}/research-quality")
 def project_research_quality(project_id: str, current_user: AuthUser = Depends(get_current_user)) -> dict:
