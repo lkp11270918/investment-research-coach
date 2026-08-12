@@ -6,39 +6,57 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { MemoPanel } from '@/components/memo-panel'
-import { decideMemoSuggestion, fetchEvidenceGraph, fetchMemoVersions, requestMemoSuggestions, saveMemoVersion, type BackendMemo, type BackendMemoSection, type EvidenceGraphNode, type MemoVersion } from '@/lib/api'
+import { decideMemoSuggestion, fetchEvidenceGraph, fetchMemoVersions, fetchResearchProject, requestMemoSuggestions, saveMemoVersion, type BackendMemo, type BackendMemoSection, type EvidenceGraphNode, type MemoVersion, type ResearchProjectDetail } from '@/lib/api'
 import { MEMO_CHAPTER_TITLES } from '@/lib/memo-chapters'
 
 export function MemoCoauthorPanel({ projectId, companyName, stockCode, industry, memo, evidenceItems = [] }: { projectId?: string | null; companyName?: string; stockCode?: string; industry?: string; memo?: BackendMemo | null; evidenceItems?: Parameters<typeof MemoPanel>[0]['evidenceItems'] }) {
   const [versions, setVersions] = useState<MemoVersion[]>([])
-  const [sections, setSections] = useState<BackendMemoSection[]>(memo?.sections || [])
+  const [sections, setSections] = useState<BackendMemoSection[]>(projectId ? [] : (memo?.sections || []))
   const [evidenceNodes, setEvidenceNodes] = useState<EvidenceGraphNode[]>([])
   const [selectedSection, setSelectedSection] = useState(0)
   const [summary, setSummary] = useState('完善研究观点与证据')
   const [requestFormal, setRequestFormal] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(Boolean(projectId))
+  const [project, setProject] = useState<ResearchProjectDetail | null>(null)
 
-  const load = async () => {
-    if (!projectId) return
-    const [history, graph] = await Promise.all([fetchMemoVersions(projectId), fetchEvidenceGraph(projectId)])
-    setVersions(history)
-    setEvidenceNodes(graph.nodes.filter(node => Boolean(node.evidence_id)))
-    const latest = history.at(-1)
-    if (latest) setSections(latest.sections)
-  }
-
-  useEffect(() => { load().catch(error => setError(error instanceof Error ? error.message : 'Memo加载失败')) }, [projectId])
+  useEffect(() => {
+    let cancelled = false
+    setVersions([])
+    setSections(projectId ? [] : (memo?.sections || []))
+    setEvidenceNodes([])
+    setSelectedSection(0)
+    setError('')
+    setProject(null)
+    setLoading(Boolean(projectId))
+    if (!projectId) return () => { cancelled = true }
+    Promise.all([fetchMemoVersions(projectId), fetchEvidenceGraph(projectId), fetchResearchProject(projectId)])
+      .then(([history, graph, detail]) => {
+        if (cancelled) return
+        setVersions(history)
+        setEvidenceNodes(graph.nodes.filter(node => Boolean(node.evidence_id)))
+        setProject(detail)
+        setSections(history.at(-1)?.sections || [])
+      })
+      .catch(error => !cancelled && setError(error instanceof Error ? error.message : 'Memo加载失败'))
+      .finally(() => !cancelled && setLoading(false))
+    return () => { cancelled = true }
+  }, [projectId, memo])
 
   const latest = versions.at(-1)
   const current = sections[selectedSection]
+  const activeCompanyName = project?.project.company_profile.company_name || companyName
+  const activeStockCode = project?.project.company_profile.ticker || stockCode
+  const activeIndustry = project?.project.company_profile.industry || industry
   const changedSections = useMemo(() => {
     if (versions.length < 2) return []
     const previous = new Map(versions[versions.length - 2].sections.map(item => [item.section_id, item]))
     return versions[versions.length - 1].sections.filter(item => previous.get(item.section_id)?.body !== item.body).map(item => item.title)
   }, [versions])
 
-  if (!projectId) return <MemoPanel companyName={companyName} stockCode={stockCode} industry={industry} memo={memo} evidenceItems={evidenceItems} />
+  if (loading) return <div className="mx-auto max-w-screen-xl px-6 py-12"><div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">正在加载当前项目的研究报告...</div></div>
+  if (!projectId || !sections.length) return <MemoPanel companyName={activeCompanyName} stockCode={activeStockCode} industry={activeIndustry} hasProject={Boolean(projectId)} memo={projectId ? null : memo} evidenceItems={evidenceItems} />
 
   const save = async () => {
     setBusy(true); setError('')
@@ -64,7 +82,7 @@ export function MemoCoauthorPanel({ projectId, companyName, stockCode, industry,
   }
 
   return <div className="mx-auto max-w-screen-2xl px-6 py-8">
-    <div className="mb-5 flex items-end justify-between"><div><div className="mb-1 text-xs font-medium uppercase tracking-wider text-primary">Co-writing Mode</div><h1 className="text-xl font-semibold text-foreground">共同完成研究 Memo</h1><p className="mt-1 text-sm text-muted-foreground">AI提出建议，用户决定观点；每次保存形成独立版本。</p></div><div className="flex gap-2"><Button variant="outline" onClick={suggest} disabled={busy || !latest}><Sparkles className="h-4 w-4" />AI修改建议</Button><Button onClick={save} disabled={busy || !sections.length}>{busy ? '处理中...' : `保存 v${versions.length + 1}`}</Button></div></div>
+    <div className="mb-5 flex items-end justify-between"><div><div className="mb-1 text-xs font-medium uppercase tracking-wider text-primary">{activeCompanyName || '当前研究项目'}</div><h1 className="text-xl font-semibold text-foreground">共同完成研究 Memo</h1><p className="mt-1 text-sm text-muted-foreground">AI提出建议，用户决定观点；每次保存形成独立版本。</p></div><div className="flex gap-2"><Button variant="outline" onClick={suggest} disabled={busy || !latest}><Sparkles className="h-4 w-4" />AI修改建议</Button><Button onClick={save} disabled={busy || !sections.length}>{busy ? '处理中...' : `保存 v${versions.length + 1}`}</Button></div></div>
     {error && <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
     <div className="grid grid-cols-[220px_minmax(0,1fr)_320px] gap-5">
       <div className="space-y-2 border-r border-border pr-4"><div className="mb-2 text-xs font-medium text-muted-foreground">报告章节</div>{sections.map((section, index) => <button key={section.section_id} onClick={() => setSelectedSection(index)} className={`w-full rounded-md border px-3 py-2 text-left text-xs ${index === selectedSection ? 'border-primary/40 bg-primary/10 text-foreground' : 'border-border bg-card text-muted-foreground'}`}>{String(index + 1).padStart(2, '0')} · {MEMO_CHAPTER_TITLES[section.section_id]}</button>)}</div>
