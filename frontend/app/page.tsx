@@ -6,7 +6,6 @@ import { AuthModal } from '@/components/auth-modal'
 import { NavHeader } from '@/components/nav-header'
 import { InputPanel } from '@/components/input-panel'
 import { AnalysisPanel, type AnalysisData } from '@/components/analysis-panel'
-import { MemoCoauthorPanel } from '@/components/memo-coauthor-panel'
 import { ReviewPanel } from '@/components/review-panel'
 import { ResearchWorkspacePanel } from '@/components/research-workspace-panel'
 import { CapabilityPanel } from '@/components/capability-panel'
@@ -134,7 +133,6 @@ export default function Page() {
             onTabChange={setActiveTab}
             isLoggedIn={isLoggedIn}
             user={currentUser}
-            hasAnalysisData={!!analysisData}
             onLogin={handleLogin}
             onSignup={handleSignup}
             onLogout={handleLogout}
@@ -162,17 +160,6 @@ export default function Page() {
             {activeTab === 'evidence' && <ResearchWorkspacePanel isLoggedIn={isLoggedIn} projectId={currentProjectId} companyName={analysisData?.companyName} onLogin={handleLogin} section="evidence" onNewResearch={handleNewResearch} onProjectChange={setCurrentProjectId} />}
 
             {activeTab === 'thesis' && <ResearchWorkspacePanel isLoggedIn={isLoggedIn} projectId={currentProjectId} companyName={analysisData?.companyName} onLogin={handleLogin} section="thesis" onNewResearch={handleNewResearch} onProjectChange={setCurrentProjectId} />}
-
-            {activeTab === 'memo' && (
-              <MemoCoauthorPanel
-                projectId={currentProjectId}
-                companyName={analysisData?.companyName}
-                stockCode={analysisData?.stockCode}
-                industry={analysisData?.industry}
-                memo={memo}
-                evidenceItems={analysisResult?.state.evidence_items || []}
-              />
-            )}
 
             {activeTab === 'review' && <ReviewPanel />}
 

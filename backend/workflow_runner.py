@@ -398,11 +398,15 @@ def run_review_workflow(request: ReviewRequest) -> WorkflowState:
     profile.research_language = language
     profile.language_source = source
     state=WorkflowState(company_profile=profile,raw_materials=request.materials); plan,planner=run_planner_agent(state)
-    state.research_plan=plan; doctrine=run_firm_doctrine_case_retrieval(state); organizer=_retry_model_fallback(run_material_organizer_llm,state,run_material_organizer_llm(state)); extractor=_retry_model_fallback(run_evidence_extractor_llm,state,run_evidence_extractor_llm(state))
+    state.research_plan=plan; doctrine=run_firm_doctrine_case_retrieval(state)
+    # Memo review needs one deep judgment call. Stable document normalization and
+    # evidence extraction stay deterministic so the request cannot fan out into
+    # several sequential model calls before the actual review begins.
+    organizer=run_material_organizer(state); extractor=run_evidence_extractor(state)
     organizer_mode,organizer_model=_execution_metadata("material_organization",organizer)
     state.skill_outputs["doctrine_context"]=to_skill_result("doctrine_context",doctrine,{"mode":state.company_profile.user_mode.value},execution_mode="deterministic"); state.skill_outputs["material_organization"]=to_skill_result("material_organization",organizer,{},execution_mode=organizer_mode,model_name=organizer_model); evidence_mode,evidence_model=_execution_metadata("evidence_extraction",extractor); state.skill_outputs["evidence_extraction"]=to_skill_result("evidence_extraction",extractor,{},execution_mode=evidence_mode,model_name=evidence_model)
     state.processing_records=execute_model_pipeline(state.raw_materials,state.evidence_items); _financials(state)
-    _sync_graph(state,semantic=True)
+    _sync_graph(state)
     review=run_research_coach_review_llm(request.memo_text,state); review_mode,review_model=_execution_metadata("research_coach_review",review); state.skill_outputs["research_coach_review"]=to_skill_result("research_coach_review",review,{"memo":request.memo_text},execution_mode=review_mode,model_name=review_model)
     english = is_english(language)
     main={"research_planner":planner,"evidence":AgentOutput(agent_name="Evidence Agent",status=AgentStatus.PASS if state.evidence_items else AgentStatus.PARTIAL,summary=f"Built {len(state.evidence_items)} evidence items for review." if english else f"建立 {len(state.evidence_items)} 条批改证据。",confidence=Confidence.MEDIUM),"research_analyst":AgentOutput(agent_name="Research Analyst Agent",status=AgentStatus.PASS,summary="Converted the user memo into reviewable research statements." if english else "已将用户 Memo 拆解为待审查研究表达。",confidence=Confidence.MEDIUM),"red_team_judge":AgentOutput(agent_name="Red Team & Judge Agent",status=review.status,summary=review.summary,findings=review.findings,missing_materials=review.missing_materials,warnings=review.warnings,confidence=review.confidence)}

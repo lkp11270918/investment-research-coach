@@ -9,7 +9,6 @@ interface NavHeaderProps {
   onTabChange: (tab: string) => void
   isLoggedIn: boolean
   user: AuthUser | null
-  hasAnalysisData: boolean
   onLogin: () => void
   onSignup: () => void
   onLogout: () => void
@@ -22,7 +21,6 @@ export function NavHeader({
   onTabChange,
   isLoggedIn,
   user,
-  hasAnalysisData,
   onLogin,
   onSignup,
   onLogout,
@@ -61,8 +59,6 @@ export function NavHeader({
     { id: 'map', label: 'Research Map', disabled: false },
     { id: 'evidence', label: 'Evidence', disabled: false },
     { id: 'thesis', label: 'Thesis', disabled: false },
-    { id: 'memo', label: 'Memo', disabled: !hasAnalysisData },
-    { id: 'review', label: '报告批改', disabled: false },
     { id: 'defense', label: 'Defense & Feedback', disabled: false },
   ]
   return (
@@ -93,8 +89,10 @@ export function NavHeader({
           </div>
 
           {/* Nav tabs */}
-          <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
-            {tabs.map((tab) => (
+          <nav className="flex min-w-0 items-center gap-2 overflow-x-auto" aria-label="产品功能">
+            <div className="flex items-center gap-0.5 rounded-md border border-border/70 bg-black/10 p-0.5" aria-label="完整研究">
+              <span className="px-2 text-[10px] font-medium text-muted-foreground">完整研究</span>
+              {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => !tab.disabled && onTabChange(tab.id)}
@@ -125,7 +123,21 @@ export function NavHeader({
                   />
                 )}
               </button>
-            ))}
+              ))}
+            </div>
+            <div className="h-6 w-px shrink-0 bg-border" />
+            <button
+              type="button"
+              onClick={() => onTabChange('review')}
+              className="relative shrink-0 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors"
+              style={{
+                color: activeTab === 'review' ? 'oklch(0.10 0.005 240)' : 'oklch(0.72 0.08 195)',
+                borderColor: 'oklch(0.45 0.08 195)',
+                backgroundColor: activeTab === 'review' ? 'oklch(0.65 0.14 195)' : 'oklch(0.16 0.02 195)',
+              }}
+            >
+              报告批改
+            </button>
           </nav>
 
           {/* Right: auth state */}
