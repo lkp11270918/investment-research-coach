@@ -19,8 +19,8 @@ class ReleaseGateTest(unittest.TestCase):
             else:
                 os.environ["USE_LLM_AGENTS"] = previous
         self.assertEqual(state.workflow_status, "needs_evidence")
-        self.assertIn("待补证据研究草稿", state.memo.markdown)
-        self.assertIn("不能生成正式研究 Memo", state.memo.markdown)
+        self.assertIn("信息有限研究报告", state.memo.markdown)
+        self.assertNotIn("不能生成正式研究 Memo", state.memo.markdown)
         self.assertIsNotNone(state.post_memo_gate)
 
 

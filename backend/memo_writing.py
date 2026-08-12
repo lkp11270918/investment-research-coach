@@ -163,10 +163,10 @@ def run_memo_writing_skill(state: WorkflowState) -> ResearchMemo:
         sections=sections,source_ids=list(dict.fromkeys(item.source_id for item in state.source_documents)),
         disclaimer=disclaimer,
     )
-    prefix=("# Evidence-Gap Research Draft\n\nThe research did not pass the evidence and compliance gates. "
-            "A formal memo cannot be issued; the following 19 sections identify evidence and research gaps.\n\n"
+    prefix=("# Information-Limited Research Report\n\nThis report is based only on the materials provided. "
+            "Sections with insufficient evidence state the known information and the specific gaps to verify; the report is not a complete investment conclusion.\n\n"
             if english and not gate_passed else
-            "# 待补证据研究草稿\n\n当前研究未通过证据与合规门禁，不能生成正式研究 Memo；以下固定 19 章仅用于明确待补证据和研究缺口。\n\n"
+            "# 信息有限研究报告\n\n本报告仅基于已提供的资料组成。证据不足的章节会同时列出当前已知信息与待验证缺口；本报告不代表完整的投资结论。\n\n"
             if not gate_passed else "")
     memo.markdown=prefix+"\n\n".join(f"## {item.title}\n\n{item.body}" for item in sections)
     return memo

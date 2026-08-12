@@ -12,7 +12,7 @@ from backend.workflow_runner import run_analysis_workflow
 
 
 class MaterialAnalysisSpeedTest(unittest.TestCase):
-    def test_fast_mode_preserves_material_analysis_outputs_without_full_memo(self) -> None:
+    def test_fast_mode_preserves_material_analysis_outputs_and_generates_limited_memo(self) -> None:
         materials = [
             RawMaterial(
                 title="券商A研报",
@@ -51,7 +51,9 @@ class MaterialAnalysisSpeedTest(unittest.TestCase):
         self.assertTrue(any(point.point_type == "divergence" for point in state.research_judgment.view_points))
         self.assertTrue(state.research_claims)
         self.assertTrue(state.judge_decisions)
-        self.assertIsNone(state.memo)
+        self.assertIsNotNone(state.memo)
+        self.assertEqual(len(state.memo.sections), 19)
+        self.assertIn("信息有限研究报告", state.memo.markdown)
         self.assertNotIn("financial_quality_dividend", state.skill_outputs)
         self.assertNotIn("valuation_margin", state.skill_outputs)
 

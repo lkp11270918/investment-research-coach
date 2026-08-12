@@ -59,6 +59,7 @@ export function NavHeader({
     { id: 'map', label: 'Research Map', disabled: false },
     { id: 'evidence', label: 'Evidence', disabled: false },
     { id: 'thesis', label: 'Thesis', disabled: false },
+    { id: 'memo', label: 'Memo', disabled: false },
     { id: 'defense', label: 'Defense & Feedback', disabled: false },
   ]
   const researchActive = activeTab !== 'review'

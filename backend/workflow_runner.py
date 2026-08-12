@@ -206,7 +206,10 @@ def _run_material_analysis_fast(
     _sync_graph(state)
     record_event(state, "analysis", "completed", main["research_analyst"].summary)
     record_event(state, "judge", main["red_team_judge"].status.value, main["red_team_judge"].summary)
-    state.current_stage = "complete"
+    record_event(state, "writing", "running", "将当前有限资料整理为信息有限研究报告")
+    state.memo = run_memo_writing_skill(state)
+    record_event(state, "writing", "completed", "已生成固定 19 章信息有限研究报告")
+    state.current_stage = WorkflowStopAfter.MEMO.value
     state.workflow_status = "completed" if state.evidence_items else "needs_evidence"
     record_event(state, "completed", state.workflow_status)
     return _save(state, main)
@@ -363,7 +366,7 @@ def run_analysis_workflow(request: AnalyzeRequest) -> WorkflowState:
         record_event(state,"writing","running")
         state.memo=run_memo_writing_skill(state)
         _sync_graph(state)
-        record_event(state,"writing","completed","生成固定 19 章待补证据草稿。")
+        record_event(state,"writing","completed","生成固定 19 章信息有限研究报告。")
     else:
         record_event(state,"writing","running"); state.memo=run_memo_writing_skill(state); _sync_graph(state); record_event(state,"writing","completed")
     state.current_stage=WorkflowStopAfter.MEMO.value
