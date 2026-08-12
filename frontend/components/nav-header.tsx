@@ -61,6 +61,7 @@ export function NavHeader({
     { id: 'thesis', label: 'Thesis', disabled: false },
     { id: 'defense', label: 'Defense & Feedback', disabled: false },
   ]
+  const researchActive = activeTab !== 'review'
   return (
     <header
       className="sticky top-0 z-50 border-b"
@@ -88,48 +89,23 @@ export function NavHeader({
             </span>
           </div>
 
-          {/* Nav tabs */}
-          <nav className="flex min-w-0 items-center gap-2 overflow-x-auto" aria-label="产品功能">
-            <div className="flex items-center gap-0.5 rounded-md border border-border/70 bg-black/10 p-0.5" aria-label="完整研究">
-              <span className="px-2 text-[10px] font-medium text-muted-foreground">完整研究</span>
-              {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => !tab.disabled && onTabChange(tab.id)}
-                disabled={tab.disabled}
-                title={tab.disabled ? '请先完成资料输入并开始分析' : undefined}
-                className="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150"
-                style={{
-                  color: tab.disabled
-                    ? 'oklch(0.35 0.01 240)'
-                    : activeTab === tab.id
-                    ? 'oklch(0.93 0.005 240)'
-                    : 'oklch(0.55 0.01 240)',
-                  backgroundColor: activeTab === tab.id && !tab.disabled ? 'oklch(0.22 0.015 240)' : 'transparent',
-                  cursor: tab.disabled ? 'not-allowed' : 'pointer',
-                }}
-                onMouseEnter={e => {
-                  if (!tab.disabled && activeTab !== tab.id) e.currentTarget.style.color = 'oklch(0.80 0.005 240)'
-                }}
-                onMouseLeave={e => {
-                  if (!tab.disabled && activeTab !== tab.id) e.currentTarget.style.color = 'oklch(0.55 0.01 240)'
-                }}
-              >
-                {tab.label}
-                {activeTab === tab.id && !tab.disabled && (
-                  <span
-                    className="absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-4 rounded-full"
-                    style={{ backgroundColor: 'oklch(0.65 0.14 195)' }}
-                  />
-                )}
-              </button>
-              ))}
-            </div>
-            <div className="h-6 w-px shrink-0 bg-border" />
+          <nav className="flex min-w-0 items-center gap-2" aria-label="产品主功能">
+            <button
+              type="button"
+              onClick={() => onTabChange('map')}
+              className="relative shrink-0 rounded-md border px-4 py-1.5 text-sm font-semibold transition-colors"
+              style={{
+                color: researchActive ? 'oklch(0.10 0.005 240)' : 'oklch(0.72 0.08 195)',
+                borderColor: 'oklch(0.45 0.08 195)',
+                backgroundColor: researchActive ? 'oklch(0.65 0.14 195)' : 'oklch(0.16 0.02 195)',
+              }}
+            >
+              完整研究
+            </button>
             <button
               type="button"
               onClick={() => onTabChange('review')}
-              className="relative shrink-0 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors"
+              className="relative shrink-0 rounded-md border px-4 py-1.5 text-sm font-semibold transition-colors"
               style={{
                 color: activeTab === 'review' ? 'oklch(0.10 0.005 240)' : 'oklch(0.72 0.08 195)',
                 borderColor: 'oklch(0.45 0.08 195)',
@@ -142,7 +118,7 @@ export function NavHeader({
 
           {/* Right: auth state */}
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            {researchActive && <button
               type="button"
               onClick={onNewResearch}
               className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/5"
@@ -150,7 +126,7 @@ export function NavHeader({
             >
               <Plus className="h-3.5 w-3.5" />
               新建研究
-            </button>
+            </button>}
             {isLoggedIn ? (
               <>
                 <button
@@ -235,6 +211,27 @@ export function NavHeader({
           </div>
         </div>
       </div>
+      {researchActive && (
+        <div className="border-t border-border/70 bg-black/10">
+          <nav className="mx-auto flex h-10 max-w-screen-2xl items-center justify-center gap-1 px-6" aria-label="完整研究步骤">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onTabChange(tab.id)}
+                className="relative rounded-md px-4 py-1.5 text-xs font-medium transition-colors"
+                style={{
+                  color: activeTab === tab.id ? 'oklch(0.93 0.005 240)' : 'oklch(0.55 0.01 240)',
+                  backgroundColor: activeTab === tab.id ? 'oklch(0.22 0.015 240)' : 'transparent',
+                }}
+              >
+                {tab.label}
+                {activeTab === tab.id && <span className="absolute bottom-0 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full bg-primary" />}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
       {showDeleteDialog && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
           <div className="w-full max-w-md rounded-xl border border-destructive/30 bg-card p-5 shadow-2xl">
