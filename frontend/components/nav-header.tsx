@@ -62,6 +62,7 @@ export function NavHeader({
     { id: 'evidence', label: 'Evidence', disabled: false },
     { id: 'thesis', label: 'Thesis', disabled: false },
     { id: 'memo', label: 'Memo', disabled: !hasAnalysisData },
+    { id: 'review', label: '报告批改', disabled: false },
     { id: 'defense', label: 'Defense & Feedback', disabled: false },
   ]
   return (

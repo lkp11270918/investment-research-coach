@@ -164,15 +164,17 @@ export default function Page() {
             {activeTab === 'thesis' && <ResearchWorkspacePanel isLoggedIn={isLoggedIn} projectId={currentProjectId} companyName={analysisData?.companyName} onLogin={handleLogin} section="thesis" onNewResearch={handleNewResearch} onProjectChange={setCurrentProjectId} />}
 
             {activeTab === 'memo' && (
-              <><MemoCoauthorPanel
+              <MemoCoauthorPanel
                 projectId={currentProjectId}
                 companyName={analysisData?.companyName}
                 stockCode={analysisData?.stockCode}
                 industry={analysisData?.industry}
                 memo={memo}
                 evidenceItems={analysisResult?.state.evidence_items || []}
-              /><ReviewPanel /></>
+              />
             )}
+
+            {activeTab === 'review' && <ReviewPanel />}
 
             {activeTab === 'defense' && <><ResearchWorkspacePanel isLoggedIn={isLoggedIn} projectId={currentProjectId} companyName={analysisData?.companyName} onLogin={handleLogin} section="defense" onNewResearch={handleNewResearch} onProjectChange={setCurrentProjectId} /><CapabilityPanel isLoggedIn={isLoggedIn} onLogin={handleLogin} /></>}
           </main>
