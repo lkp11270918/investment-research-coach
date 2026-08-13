@@ -398,6 +398,7 @@ class DefenseSession(BaseModel):
     session_id: str = Field(default_factory=lambda: f"DEF-{uuid4().hex[:10]}")
     project_id: str
     thesis_id: str
+    memo_version_id: str | None = None
     status: str = "active"
     turns: list[DefenseTurn] = Field(default_factory=list)
     overall_score: float | None = None

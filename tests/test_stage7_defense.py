@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from backend.defense import answer_defense, start_defense
-from backend.models import AgentStatus, Confidence, EvidenceGraph, EvidenceGraphNode, ThesisAssessment, ThesisDraft, ThesisVariable, ThesisVersion, VerificationStatus
+from backend.models import AgentStatus, Confidence, EvidenceGraph, EvidenceGraphNode, MemoSection, MemoVersion, ThesisAssessment, ThesisDraft, ThesisVariable, ThesisVersion, VerificationStatus
 
 
 class NoLLM:
@@ -16,7 +16,15 @@ class DefenseTest(unittest.TestCase):
         thesis = ThesisVersion(project_id="P", version=1, draft=ThesisDraft(core_view="海外增长可持续"), assessment=ThesisAssessment(status=AgentStatus.PARTIAL))
         session = start_defense("P", thesis, graph)
         self.assertIn("海外应收账款", session.turns[0].question)
-        self.assertEqual(session.question_model, "deterministic_company_evidence")
+        self.assertEqual(session.question_model, "deterministic_thesis_memo_evidence")
+
+    def test_questions_use_latest_memo_as_defense_context(self) -> None:
+        graph = EvidenceGraph(nodes=[EvidenceGraphNode(node_id="EVIDENCE:E1", node_type="financial_fact", label="经营现金流", evidence_id="E1")])
+        thesis = ThesisVersion(project_id="P", version=1, draft=ThesisDraft(core_view="现金流质量改善"), assessment=ThesisAssessment(status=AgentStatus.PARTIAL))
+        memo = MemoVersion(project_id="P", version=2, sections=[MemoSection(section_id="cash_flow", title="现金流质量", body="经营现金流改善，但自由现金流仍受资本开支约束。", summary="自由现金流仍受资本开支约束。")])
+        session = start_defense("P", thesis, graph, memo=memo)
+        self.assertEqual(session.memo_version_id, memo.memo_version_id)
+        self.assertIn("自由现金流仍受资本开支约束", session.turns[0].question)
     def test_four_roles_and_dynamic_followup(self) -> None:
         graph = EvidenceGraph(nodes=[EvidenceGraphNode(node_id="EVIDENCE:E1", node_type="financial_fact", label="经营现金流", evidence_id="E1")])
         draft = ThesisDraft(core_view="现金流质量需要验证", core_variables=[ThesisVariable(name=str(i), rationale="关键") for i in range(3)], supporting_evidence_ids=["E1"], counter_evidence_ids=["E1"], assumptions=["需求稳定"], falsification_conditions=["自由现金流下降"], unknowns=["资本开支"])

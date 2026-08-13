@@ -3,23 +3,23 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from .llm_client import LLMError, OpenAIClient
-from .models import DefenseRole, DefenseSession, DefenseTurn, EvidenceGraph, ThesisVersion
+from .models import DefenseRole, DefenseSession, DefenseTurn, EvidenceGraph, MemoVersion, ThesisVersion
 from .model_pipeline import embed_text
 
 
 ROLE_ORDER = [DefenseRole.PORTFOLIO_MANAGER, DefenseRole.INVESTMENT_DIRECTOR, DefenseRole.INDUSTRY_RESEARCHER, DefenseRole.RISK_MANAGER]
 
 
-def start_defense(project_id: str, thesis: ThesisVersion, graph: EvidenceGraph, client: OpenAIClient | None = None, prior_errors: list[str] | None = None) -> DefenseSession:
+def start_defense(project_id: str, thesis: ThesisVersion, graph: EvidenceGraph, client: OpenAIClient | None = None, prior_errors: list[str] | None = None, memo: MemoVersion | None = None) -> DefenseSession:
     client = client or OpenAIClient()
     prior_errors = prior_errors or []
-    generated = _generate_questions(thesis, graph, client, prior_errors)
-    turns = generated or [_question_for_role(role, thesis, graph) for role in ROLE_ORDER]
+    generated = _generate_questions(thesis, graph, client, prior_errors, memo)
+    turns = generated or [_question_for_role(role, thesis, graph, memo) for role in ROLE_ORDER]
     first, queued = turns[0], turns[1:]
-    return DefenseSession(project_id=project_id, thesis_id=thesis.thesis_id, turns=[first], question_model=client.settings.openai_model if generated and client.available else "deterministic_company_evidence", targeted_gaps=prior_errors[:5], question_bank=queued)
+    return DefenseSession(project_id=project_id, thesis_id=thesis.thesis_id, memo_version_id=memo.memo_version_id if memo else None, turns=[first], question_model=client.settings.openai_model if generated and client.available else "deterministic_thesis_memo_evidence", targeted_gaps=prior_errors[:5], question_bank=queued)
 
 
-def answer_defense(session: DefenseSession, thesis: ThesisVersion, graph: EvidenceGraph, answer: str, evidence_ids: list[str], client: OpenAIClient | None = None) -> DefenseSession:
+def answer_defense(session: DefenseSession, thesis: ThesisVersion, graph: EvidenceGraph, answer: str, evidence_ids: list[str], client: OpenAIClient | None = None, memo: MemoVersion | None = None) -> DefenseSession:
     if session.status != "active" or not session.turns or session.turns[-1].answer is not None:
         raise ValueError("答辩会话当前不能提交回答")
     valid_ids = {node.evidence_id for node in graph.nodes if node.evidence_id}
@@ -39,7 +39,7 @@ def answer_defense(session: DefenseSession, thesis: ThesisVersion, graph: Eviden
         if role_index + 1 < len(ROLE_ORDER):
             next_role = ROLE_ORDER[role_index + 1]
             planned = next((item for item in session.question_bank if item.role == next_role), None)
-            session.turns.append(planned or _question_for_role(next_role, thesis, graph))
+            session.turns.append(planned or _question_for_role(next_role, thesis, graph, memo))
         else:
             session.status = "completed"
             scores = [item.score for item in session.turns if item.score is not None]
@@ -49,7 +49,7 @@ def answer_defense(session: DefenseSession, thesis: ThesisVersion, graph: Eviden
     return session
 
 
-def _question_for_role(role: DefenseRole, thesis: ThesisVersion, graph: EvidenceGraph) -> DefenseTurn:
+def _question_for_role(role: DefenseRole, thesis: ThesisVersion, graph: EvidenceGraph, memo: MemoVersion | None = None) -> DefenseTurn:
     draft = thesis.draft
     questions = {
         DefenseRole.PORTFOLIO_MANAGER: f"你的核心观点是“{draft.core_view}”。其中最关键的可验证假设是什么，为什么？",
@@ -60,7 +60,8 @@ def _question_for_role(role: DefenseRole, thesis: ThesisVersion, graph: Evidence
     }
     risk_nodes = [node for node in graph.nodes if node.evidence_id and node.node_type in {"risk", "financial_fact", "red_team_challenge"}][:5]
     context = "；".join(node.label[:60] for node in risk_nodes[:2])
-    question = questions[role] + (f" 请结合当前证据中的“{context}”回答。" if context else "")
+    memo_context="；".join(section.summary or section.body[:80] for section in (memo.sections[:3] if memo else []) if section.summary or section.body)
+    question = questions[role] + (f" 请结合 Memo 中的“{memo_context[:180]}”以及当前证据中的“{context}”回答。" if memo_context and context else f" 请结合 Memo 中的“{memo_context[:180]}”回答。" if memo_context else f" 请结合当前证据中的“{context}”回答。" if context else "")
     return DefenseTurn(role=role, question=question, thesis_reference=draft.core_view, evidence_ids=[node.evidence_id for node in risk_nodes if node.evidence_id])
 
 
@@ -111,12 +112,12 @@ def _improvement_tasks(session: DefenseSession) -> list[str]:
     return list(dict.fromkeys(tasks)) or ["将答辩中使用的关键证据和推翻条件同步回 Thesis。"]
 
 
-def _generate_questions(thesis: ThesisVersion, graph: EvidenceGraph, client: OpenAIClient, prior_errors: list[str]) -> list[DefenseTurn]:
+def _generate_questions(thesis: ThesisVersion, graph: EvidenceGraph, client: OpenAIClient, prior_errors: list[str], memo: MemoVersion | None = None) -> list[DefenseTurn]:
     if not client.available:
         return []
     evidence = [{"id": node.evidence_id, "type": node.node_type, "label": node.label, "status": node.verification_status.value} for node in graph.nodes if node.evidence_id][:80]
     try:
-        result = client.generate_json(system_prompt="你是买方投委会秘书。分别以portfolio_manager、investment_director、industry_researcher、risk_manager四个角色，针对这家公司的Thesis、证据冲突和用户历史短板各提出一个不可用套话回答的问题。返回JSON：{\"questions\":[{\"role\":\"portfolio_manager\",\"question\":\"...\",\"evidence_ids\":[\"...\"]}]}。", user_payload={"thesis": thesis.draft.model_dump(mode="json"), "evidence": evidence, "prior_errors": prior_errors}, temperature=0)
+        result = client.generate_json(system_prompt="你是买方投委会秘书。分别以portfolio_manager、investment_director、industry_researcher、risk_manager四个角色，针对这家公司的Thesis、Memo结论、证据冲突和用户历史短板各提出一个不可用套话回答的问题。返回JSON：{\"questions\":[{\"role\":\"portfolio_manager\",\"question\":\"...\",\"evidence_ids\":[\"...\"]}]}。", user_payload={"thesis": thesis.draft.model_dump(mode="json"), "memo_sections":[{"title":item.title,"body":item.body,"evidence_ids":item.evidence_ids,"status":item.status} for item in memo.sections] if memo else [], "evidence": evidence, "prior_errors": prior_errors}, temperature=0)
     except LLMError:
         return []
     allowed = {role.value: role for role in ROLE_ORDER}

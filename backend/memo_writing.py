@@ -29,6 +29,25 @@ RESEARCH_SECTIONS={
     "industry_competition","management_capital_allocation",
     "narrative_vs_financials","sell_side_consensus_divergence","valuation_margin","value_trap",
 }
+UNAPPROVED_CAVEAT_ZH="当前没有经 Red Team & Judge 批准且证据充分的结论；该部分保留为明确资料缺口。"
+UNAPPROVED_CAVEAT_EN=("No evidence-supported conclusion has been approved by the Red Team & Judge; "
+                       "this section is retained as an explicit information gap.")
+SECTION_EVIDENCE_KEYWORDS={
+    "circle_of_competence":("业务","产品","客户","收入来源","地域","理解","边界"),
+    "business_model":("商业模式","业务模式","收入","客户","产品","服务","变现","渠道"),
+    "key_variables":("关键变量","驱动","增速","价格","销量","成本","份额","用户"),
+    "financial_earnings_quality":("营收","收入","净利润","利润","毛利","roe","非经常","应收","存货"),
+    "cash_flow":("现金流","经营现金","自由现金","资本开支","fcf"),
+    "dividend":("分红","股息","派息","回购"),
+    "balance_sheet":("负债","资产负债","有息负债","偿债","现金","应收","存货"),
+    "business_stability_moat":("护城河","竞争优势","品牌","网络效应","转换成本","稳定","壁垒"),
+    "industry_competition":("行业","竞争","市场份额","对手","格局","监管"),
+    "management_capital_allocation":("管理层","资本配置","并购","回购","分红","资本开支"),
+    "narrative_vs_financials":("目标","指引","预计","管理层","财务","兑现"),
+    "sell_side_consensus_divergence":("卖方","研报","预测","共识","分歧","目标价"),
+    "valuation_margin":("估值","内在价值","安全边际","pe","pb","ev","折现","市盈率","市净率"),
+    "value_trap":("价值陷阱","风险","恶化","衰退","减值","造假","周期","不可持续"),
+}
 
 
 def _approved_claims(state: WorkflowState) -> list[tuple[ResearchClaim, str]]:
@@ -60,21 +79,61 @@ def _missing_for(state: WorkflowState, section_id: str) -> list[str]:
     return list(dict.fromkeys(str(item) for item in missing if item))
 
 
+def _relevant_evidence(state: WorkflowState, section_id: str):
+    keywords=SECTION_EVIDENCE_KEYWORDS.get(section_id,())
+    selected=[]
+    for item in state.evidence_items:
+        text=" ".join(str(value or "") for value in (item.statement,item.metric_name,item.notes)).lower()
+        category=item.category.value
+        category_match=(
+            section_id=="financial_earnings_quality"
+            and category=="financial_fact"
+        ) or (section_id=="sell_side_consensus_divergence" and category=="sell_side_opinion") or (
+            section_id in {"management_capital_allocation","narrative_vs_financials"} and category=="management_opinion"
+        ) or (section_id=="value_trap" and category=="risk")
+        if category_match or any(keyword.lower() in text for keyword in keywords):
+            selected.append(item)
+    return selected[:6]
+
+
 def _research_section(
     state: WorkflowState,
     section_id: str,
     selected: list[tuple[ResearchClaim,str]],
+    unapproved: list[ResearchClaim],
 ) -> MemoSection:
     english = is_english(state.company_profile.research_language)
     title = (SECTION_TITLES_EN if english else SECTION_TITLES)[section_id]
     missing=_missing_for(state,section_id)
     if not selected:
-        body=("No evidence-supported conclusion has been approved by the Red Team & Judge; "
-              "this section is retained as an explicit information gap.") if english else "当前没有经 Red Team & Judge 批准且证据充分的结论；该部分保留为明确资料缺口。"
+        evidence=_relevant_evidence(state,section_id)
+        pending_statements=list(dict.fromkeys(claim.statement.strip() for claim in unapproved if claim.statement.strip()))[:4]
+        evidence_statements=list(dict.fromkeys(item.statement.strip() for item in evidence if item.statement.strip()))[:6]
+        next_questions=list(dict.fromkeys(item for claim in unapproved for item in claim.falsification_conditions if item))[:4]
+        known=evidence_statements
+        caveat=UNAPPROVED_CAVEAT_EN if english else UNAPPROVED_CAVEAT_ZH
+        if english:
+            parts=[]
+            if known: parts.append("Information identified in the supplied materials:\n"+"\n".join(f"- {item}" for item in known))
+            if pending_statements: parts.append("Low-confidence analysis requiring verification:\n"+"\n".join(f"- {item}" for item in pending_statements))
+            if missing: parts.append("Missing information:\n"+"\n".join(f"- {item}" for item in missing))
+            if next_questions: parts.append("Next verification questions:\n"+"\n".join(f"- {item}" for item in next_questions))
+            parts.append(caveat)
+        else:
+            parts=[]
+            if known: parts.append("当前资料中已经识别的信息：\n"+"\n".join(f"- {item}" for item in known))
+            if pending_statements: parts.append("基于现有资料形成、仍需验证的低置信分析：\n"+"\n".join(f"- {item}" for item in pending_statements))
+            if missing: parts.append("仍需补充或验证的信息：\n"+"\n".join(f"- {item}" for item in missing))
+            if next_questions: parts.append("下一步验证问题：\n"+"\n".join(f"- {item}" for item in next_questions))
+            parts.append(caveat)
+        body="\n\n".join(parts)
+        evidence_ids=list(dict.fromkeys(item.evidence_id for item in evidence))
+        missing_information=missing or (["No reviewed conclusion is available for this section."] if english else ["缺少可进入本章的经审查结论。"])
         return MemoSection(
             section_id=section_id,title=title,body=body,
+            evidence_ids=evidence_ids,
             confidence=Confidence.LOW,status="insufficient_data",
-            summary=body,missing_information=missing or (["No reviewed conclusion is available for this section."] if english else ["缺少可进入本章的经审查结论。"]),
+            summary=known[0] if known else caveat,missing_information=missing_information,
         )
     statements=list(dict.fromkeys(statement.strip() for _,statement in selected if statement.strip()))
     if section_id=="narrative_vs_financials":
@@ -95,17 +154,24 @@ def _research_section(
 
 
 def run_memo_writing_skill(state: WorkflowState) -> ResearchMemo:
-    """Write the fixed 19-section Memo from Judge-approved claims only."""
+    """Write the fixed 19-section Memo from reviewed claims and clearly labelled evidence gaps."""
     approved=_approved_claims(state)
     gate_passed=bool(state.pre_memo_gate and state.pre_memo_gate.status=="pass")
 
     routed: dict[str,list[tuple[ResearchClaim,str]]]=defaultdict(list)
+    pending_routed: dict[str,list[ResearchClaim]]=defaultdict(list)
+    decisions={item.claim_id:item for item in state.judge_decisions}
     seen_claims=set()
     for claim,statement in approved:
         if claim.claim_id in seen_claims:
             continue
         seen_claims.add(claim.claim_id)
         routed[claim.primary_section or "key_variables"].append((claim,statement))
+    for claim in state.research_claims:
+        routed_claim=_route_claim(claim)
+        decision=decisions.get(claim.claim_id)
+        if decision and decision.decision not in {"approved","downgraded","rejected"}:
+            pending_routed[routed_claim.primary_section or "key_variables"].append(routed_claim)
 
     profile=state.company_profile
     english=is_english(profile.research_language)
@@ -121,13 +187,13 @@ def run_memo_writing_skill(state: WorkflowState) -> ResearchMemo:
             conflicts=sum(item.type_conflict for item in state.document_intelligence)
             body=(f"This research used {len(state.source_documents)} source documents and {len(state.evidence_items)} evidence items; "
                   f"{conflicts} material-type conflicts were identified; the Evidence Graph quality score is {state.evidence_graph_quality.score:.1f}. "
-                  "The memo contains only statements approved or downgraded by the Judge." if english else
+                  "Formal research conclusions contain only statements approved or downgraded by the Judge; traceable but unapproved information is shown only as low-confidence leads and explicit gaps." if english else
                   f"本次研究使用 {len(state.source_documents)} 份资料和 {len(state.evidence_items)} 条证据；"
                   f"识别到 {conflicts} 处资料类型冲突；Evidence Graph 质量得分为 {state.evidence_graph_quality.score:.1f}。"
-                  "正文只保留 Judge 批准或降级后的表达。")
+                  "正式研究结论只保留 Judge 批准或降级后的表达；未获批但可追溯的资料信息仅作为低置信线索和明确缺口展示。")
             sections.append(MemoSection(section_id=section_id,title=title,body=body,confidence=Confidence.MEDIUM,status="complete",summary=body))
         elif section_id in RESEARCH_SECTIONS:
-            sections.append(_research_section(state,section_id,routed.get(section_id,[])))
+            sections.append(_research_section(state,section_id,routed.get(section_id,[]),pending_routed.get(section_id,[])))
         elif section_id=="verification_questions":
             questions=list(dict.fromkeys(
                 ([*state.pre_memo_gate.unsupported_claims,*state.pre_memo_gate.evidence_issues,*state.pre_memo_gate.compliance_warnings] if state.pre_memo_gate and not gate_passed else [])

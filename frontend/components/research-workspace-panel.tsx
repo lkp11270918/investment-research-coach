@@ -13,6 +13,7 @@ import {
   fetchDefenseSessions,
   fetchEvidenceGraph,
   fetchEvidenceGraphHistory,
+  fetchMemoVersions,
   fetchResearchProject,
   fetchResearchMap,
   fetchResearchMapHistory,
@@ -92,6 +93,7 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(projectId)
   const [graph, setGraph] = useState<EvidenceGraph | null>(null)
   const [theses, setTheses] = useState<ThesisVersion[]>([])
+  const [memoVersionCount, setMemoVersionCount] = useState(0)
   const [defenses, setDefenses] = useState<DefenseSession[]>([])
   const [materials, setMaterials] = useState<ProjectMaterial[]>([])
   const [tasks, setTasks] = useState<ResearchTask[]>([])
@@ -148,12 +150,14 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
     setResearchMap(null)
     setGraph(null)
     setTheses([])
+    setMemoVersionCount(0)
     setDefenses([])
     setDraft(emptyDraft)
     Promise.all([
       fetchResearchMap(selectedProjectId),
       fetchEvidenceGraph(selectedProjectId),
       fetchThesisHistory(selectedProjectId),
+      fetchMemoVersions(selectedProjectId),
       fetchDefenseSessions(selectedProjectId),
       fetchResearchProject(selectedProjectId),
       fetchResearchTasks(selectedProjectId),
@@ -162,11 +166,12 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
       fetchResearchJudgment(selectedProjectId),
       fetchResearchQuality(selectedProjectId),
     ])
-      .then(([nextMap, nextGraph, nextTheses, nextDefenses, detail, nextTasks, mapHistory, graphHistory, nextJudgment, nextQuality]) => {
+      .then(([nextMap, nextGraph, nextTheses, nextMemoVersions, nextDefenses, detail, nextTasks, mapHistory, graphHistory, nextJudgment, nextQuality]) => {
         if (cancelled) return
         setResearchMap(nextMap)
         setGraph(nextGraph)
         setTheses(nextTheses)
+        setMemoVersionCount(nextMemoVersions.length)
         setDefenses(nextDefenses)
         setMaterials(detail.materials)
         setTasks(nextTasks)
@@ -258,7 +263,6 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
   const documentViews = judgment?.document_views || []
   const coreAssumptions = judgment?.core_assumptions || []
   const isComparisonLimitation = (detail: string) => /(?:资料不足|尚未|无法确认|未识别|不能把并列摘要)/.test(detail)
-  const comparisonLimitations = viewPoints.filter(point => isComparisonLimitation(`${point.topic}${point.detail}`))
   const substantiveViewPoints = viewPoints.filter(point => !isComparisonLimitation(`${point.topic}${point.detail}`))
   const consensusPoints = substantiveViewPoints.filter(point => point.point_type === 'consensus' || /(?:共同点|共识)/.test(point.topic))
   const divergencePoints = substantiveViewPoints.filter(point => point.point_type === 'divergence' && !/(?:来源|假设)/.test(point.topic))
@@ -271,7 +275,6 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
     { label: '核心分歧', points: divergencePoints },
     { label: '分歧来源', points: divergenceSourcePoints },
   ]
-  const riskCount = judgment?.red_team_challenges.length || 0
   const contradictionCount = graph?.edges.filter(edge => edge.relation === 'contradicts').length || 0
 
   const handleReview = async (node: EvidenceGraphNode, status: EvidenceGraphNode['verification_status']) => {
@@ -397,92 +400,27 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
             <div className="mb-5 border-b border-border pb-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2 text-base font-semibold text-foreground"><CheckCircle2 className="h-4 w-4 text-success" />资料分析结果</div>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">已对全部上传资料完成观点抽取、跨来源比较、分歧归因和反证检查。</p>
+                  <div className="flex items-center gap-2 text-base font-semibold text-foreground"><CheckCircle2 className="h-4 w-4 text-success" />研究路线图</div>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">明确本项目要回答的问题、优先级、现有证据和下一步研究任务。</p>
                 </div>
                 <div className="font-mono text-[10px] text-muted-foreground">版本 v{researchMap?.version || 1} · {mapHistoryCount} 个历史版本</div>
               </div>
             </div>
-
-            {!!documentViews.length && <section className="mb-5">
-              <div className="mb-3"><h2 className="text-sm font-semibold text-foreground">逐篇资料观点</h2><p className="mt-1 text-xs text-muted-foreground">先看每份资料各自的主张，不依赖跨资料比较是否成功。</p></div>
-              <div className="grid grid-cols-3 gap-3">
-                {documentViews.map((view, index) => <article key={view.source_id} className="rounded-lg border border-border bg-card p-4">
-                  <div className="mb-2 flex items-start justify-between gap-3"><div className="text-xs font-medium text-primary">资料 {index + 1}</div><div className="font-mono text-[9px] text-muted-foreground">{view.evidence_ids.length} 条证据</div></div>
-                  <h3 className="line-clamp-2 text-xs font-medium leading-5 text-foreground">{view.title}</h3>
-                  <p className="mt-3 text-sm leading-6 text-foreground">{view.main_view}</p>
-                  {!!view.supporting_points.length && <div className="mt-3 border-t border-border pt-3">{view.supporting_points.map(point => <p key={point} className="mt-1 text-xs leading-5 text-muted-foreground">· {point}</p>)}</div>}
-                </article>)}
-              </div>
-            </section>}
-
-            {!!coreAssumptions.length && <section className="mb-5">
-              <div className="mb-3 flex items-center gap-2"><Lightbulb className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">资料中的核心假设</h2></div>
-              <div className="overflow-hidden rounded-lg border border-border bg-card">
-                {coreAssumptions.map((assumption, index) => <div key={`${assumption.statement}-${index}`} className="grid grid-cols-[44px_1fr] border-b border-border last:border-b-0"><div className="bg-secondary/30 px-3 py-4 text-center font-mono text-[10px] text-muted-foreground">{String(index + 1).padStart(2, '0')}</div><div className="px-5 py-4"><p className="text-sm leading-6 text-foreground">{assumption.statement}</p>{assumption.verification_question && <p className="mt-2 text-xs leading-5 text-muted-foreground">{assumption.verification_question}</p>}</div></div>)}
-              </div>
-            </section>}
-
-            {!!substantiveViewPoints.length ? (
-              <section className="mb-5">
-                <div className="mb-3 flex items-center gap-2"><GitCompareArrows className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">多方观点比较结论</h2></div>
-                <div className="overflow-hidden rounded-lg border border-border bg-card">
-                  {comparisonSections.map(({ label, points }) => {
-                    return (
-                      <div key={String(label)} className="grid grid-cols-[140px_1fr] border-b border-border last:border-b-0">
-                        <div className="bg-secondary/30 px-4 py-4 text-xs font-medium text-muted-foreground">{label}</div>
-                        <div className="space-y-3 px-5 py-4">
-                          {points.length ? points.map(point => <div key={point.topic}><p className="text-sm leading-6 text-foreground">{point.detail}</p><div className="mt-1 font-mono text-[9px] text-muted-foreground">{point.evidence_ids.length} 条证据 · {point.source_ids.length || judgment?.sell_side_source_count || 0} 个来源</div></div>) : <p className="text-xs text-muted-foreground">当前资料没有形成可追溯的{label}结论。</p>}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {!!otherConclusionPoints.length && <div className="mt-5"><h3 className="mb-3 text-xs font-medium text-muted-foreground">叙事与事实对照</h3><div className="grid grid-cols-2 gap-3">{otherConclusionPoints.map(point => <div key={point.topic} className="rounded-lg border border-border bg-card p-4"><div className="text-xs font-medium text-foreground">{point.topic}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{point.detail}</p></div>)}</div></div>}
-
-                {!!verificationPoints.length && <div className="mt-4 rounded-lg border border-warning/25 bg-warning/5 p-4"><div className="text-xs font-medium text-warning">需要独立验证</div>{verificationPoints.map(point => <p key={point.topic} className="mt-2 text-sm leading-6 text-foreground">{point.detail}</p>)}</div>}
-              </section>
-            ) : <section className="mb-5 rounded-lg border border-warning/25 bg-warning/5 p-4"><div className="text-sm font-medium text-foreground">跨资料比较暂无可靠结论</div><p className="mt-1 text-xs leading-5 text-muted-foreground">上方已展示每份资料的观点和核心假设。现有资料缺少统一预测期间、关键参数或明确相反立场，因此不强行编造共识与分歧。</p></section>}
-
-            {!!evidenceNodes.length && (
-              <section className="mb-5">
-                <h2 className="mb-3 text-sm font-semibold text-foreground">关键证据</h2>
-                <div className="grid grid-cols-2 gap-2">
-                  {evidenceNodes.slice(0, 8).map(node => (
-                    <div key={node.node_id} className="rounded-md border border-border bg-secondary/20 p-3">
-                      <div className="text-xs leading-5 text-foreground">{node.label}</div>
-                      <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[9px] text-muted-foreground"><span>{node.node_type}</span><span>{node.evidence_id}</span></div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
             <section className="mb-5">
-              <div className="mb-2 text-xs font-medium text-muted-foreground">本次分析依据</div>
+              <div className="mb-2 text-xs font-medium text-muted-foreground">研究进度</div>
               <div className="grid grid-cols-4 gap-px overflow-hidden rounded-md border border-border bg-border">
                 {[
-                  ['已处理资料', materials.length],
-                  ['可追溯证据', evidenceNodes.length],
-                  ['具体分析结论', viewPoints.length],
-                  ['风险与反证', riskCount + contradictionCount],
+                  ['研究问题', researchMap?.questions.length || 0],
+                  ['已获得回答', analyzedQuestions.length],
+                  ['仍需研究', openQuestions.length],
+                  ['待办任务', tasks.filter(task => task.status === 'open').length],
                 ].map(([label, value]) => <div key={String(label)} className="bg-card px-4 py-3"><div className="font-mono text-lg text-foreground">{value}</div><div className="mt-0.5 text-[10px] text-muted-foreground">{label}</div></div>)}
               </div>
             </section>
 
-            <section className="mb-5 rounded-lg border border-warning/25 bg-warning/5 p-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                <div><div className="text-sm font-medium text-foreground">当前结论的边界</div><p className="mt-1 text-xs leading-5 text-muted-foreground">当前结论只代表“这批资料中能够确认、比较和质疑的内容”，不代表公司已被完整研究。卖方共识、管理层目标和未核验预测仍需一手事实支持。</p></div>
-              </div>
-            </section>
-
-            {!!comparisonLimitations.length && <section className="mb-5"><h2 className="mb-2 text-xs font-medium text-muted-foreground">分析限制</h2>{comparisonLimitations.map(point => <div key={point.topic} className="mt-2 rounded-md border border-border bg-secondary/20 p-3"><div className="text-xs font-medium text-foreground">预测口径尚未统一</div><p className="mt-1 text-xs leading-5 text-muted-foreground">现有资料未同时提供一致的预测期间、核心参数和计算方法，对应差异暂不作定量判断。</p></div>)}</section>}
-
             <section className="mb-5">
               <div className="mb-3 flex items-end justify-between gap-4">
-                <div><div className="flex items-center gap-2"><Lightbulb className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">接下来可以研究什么</h2></div><p className="mt-1 text-xs text-muted-foreground">有资料就继续验证；暂时没有资料，也可先写下自己的假设和推翻条件。</p></div>
+                <div><div className="flex items-center gap-2"><Lightbulb className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">下一步研究</h2></div><p className="mt-1 text-xs text-muted-foreground">按问题优先级补充资料、验证假设或完成研究任务。</p></div>
                 {onAddMaterials && activeProject && <Button variant="outline" size="sm" onClick={() => onAddMaterials(activeProject.project_id, { stockCode: activeProject.company_profile.ticker || '', companyName: activeProject.company_profile.company_name, industry: activeProject.company_profile.industry, outputLanguage: activeProject.company_profile.research_language || 'auto' })}><FileSearch className="h-3.5 w-3.5" />补充资料</Button>}
               </div>
               <div className="space-y-2">
@@ -493,8 +431,6 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
                 ))}
               </div>
             </section>
-
-            {!!researchMap?.core_variables.length && <section className="mb-5"><div className="mb-2 text-xs font-medium text-muted-foreground">当前资料涉及的核心变量</div><div className="flex flex-wrap gap-2">{researchMap.core_variables.map(item => <Badge key={item} className="border-primary/20 bg-primary/5 text-primary">{item}</Badge>)}</div></section>}
 
             <section>
               <div className="mb-3"><h2 className="text-sm font-semibold text-foreground">全部研究问题</h2><p className="mt-1 text-xs text-muted-foreground">{analyzedQuestions.length} 个问题已获得当前资料的回答或线索，{openQuestions.length} 个仍可继续深化。</p></div>
@@ -522,13 +458,16 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
           </TabsContent>
 
           <TabsContent value="evidence">
-            {quality && <ValuationPanel projectId={selectedProjectId} quality={quality} onUpdated={setQuality} />}
-            {quality && <div className="mb-4 grid grid-cols-3 gap-4"><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">证据图谱质量</div><div className="mt-1 font-mono text-xl text-primary">{quality.evidence_graph_quality.score ?? 0}</div><div className="mt-2 text-[10px] text-muted-foreground">可追溯 {quality.evidence_graph_quality.traceability_rate ?? 0}% · 已确认 {quality.evidence_graph_quality.verified_rate ?? 0}% · 关系覆盖 {quality.evidence_graph_quality.relation_coverage ?? 0}%</div>{quality.evidence_graph_quality.issues?.map(item=><div key={item} className="mt-1 text-[10px] text-warning">{item}</div>)}</div><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">估值与安全边际</div><div className="mt-2 text-xs text-foreground">{quality.valuation_analysis.conclusion || '资料不足'}</div><div className="mt-2 flex gap-2">{Object.entries(quality.valuation_analysis.multiples || {}).map(([key,value])=><Badge key={key} className="border-border bg-secondary text-muted-foreground">{key.toUpperCase()} {value}</Badge>)}</div>{quality.valuation_analysis.scenarios?.map(item=><div key={item.name} className="mt-1 text-[10px] text-muted-foreground">{item.name}：{item.estimated_value_per_share ?? '-'} · 安全边际 {item.margin_of_safety_percent ?? '-'}%</div>)}</div><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">财务异常</div><div className="mt-1 font-mono text-xl text-warning">{quality.financial_anomalies.length}</div>{quality.financial_anomalies.slice(0,4).map(item=><div key={item.anomaly_id} className="mt-2 text-[10px] text-muted-foreground"><span className="text-warning">{item.description}</span><div>{item.verification_question}</div></div>)}</div></div>}
+            <div className="mb-5 border-b border-border pb-4">
+              <div className="text-base font-semibold text-foreground">证据与资料</div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">查看每份资料的原始观点、出处、证据分类、关系和核验状态；这里不形成最终投资判断。</p>
+            </div>
+            {quality && <div className="mb-4 grid grid-cols-2 gap-4"><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">证据图谱质量</div><div className="mt-1 font-mono text-xl text-primary">{quality.evidence_graph_quality.score ?? 0}</div><div className="mt-2 text-[10px] text-muted-foreground">可追溯 {quality.evidence_graph_quality.traceability_rate ?? 0}% · 已确认 {quality.evidence_graph_quality.verified_rate ?? 0}% · 关系覆盖 {quality.evidence_graph_quality.relation_coverage ?? 0}%</div>{quality.evidence_graph_quality.issues?.map(item=><div key={item} className="mt-1 text-[10px] text-warning">{item}</div>)}</div><div className="rounded-lg border border-border bg-card p-4"><div className="text-xs text-muted-foreground">证据检查</div><div className="mt-1 font-mono text-xl text-warning">{quality.financial_anomalies.length + contradictionCount}</div><div className="mt-2 text-[10px] text-muted-foreground">{contradictionCount} 组来源冲突 · {quality.financial_anomalies.length} 项财务异常待核验</div>{quality.financial_anomalies.slice(0,3).map(item=><div key={item.anomaly_id} className="mt-2 text-[10px] text-muted-foreground"><span className="text-warning">{item.description}</span><div>{item.verification_question}</div></div>)}</div></div>}
             <div className="mb-5 rounded-lg border border-border bg-card p-4">
               <div className="mb-3 flex items-center justify-between"><div><div className="text-sm font-semibold text-foreground">项目资料库</div><div className="mt-1 text-[10px] text-muted-foreground">证据图谱 v{graph?.version || 1} · {graphHistoryCount} 个历史版本</div></div><span className="font-mono text-xs text-muted-foreground">{materials.length} 份</span></div>
               <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">{materials.map(material => <div key={material.material_id} className="rounded-md border border-border bg-secondary/20 p-3"><div className="truncate text-xs font-medium text-foreground">{material.title}</div><div className="mt-1 flex gap-2 text-[10px] text-muted-foreground"><span>v{material.version}</span><span>{material.source_type}</span><span>{material.modality}</span></div>{material.period_covered && <div className="mt-1 text-[10px] text-muted-foreground">期间：{material.period_covered}</div>}{material.parse_warnings.map(item => <div key={item} className="mt-1 line-clamp-2 text-[10px] text-warning">{item}</div>)}{material.blocks.filter(block => block.requires_confirmation).slice(0, 3).map(block => <div key={block.block_id} className="mt-2 rounded border border-warning/30 bg-warning/5 p-2"><div className="line-clamp-2 text-[10px] text-foreground">{block.content}</div><div className="mt-1 text-[9px] text-muted-foreground">{block.speaker ? `${block.speaker} · ` : ''}{block.start_seconds != null ? `${block.start_seconds}s · ` : ''}{block.region ? `区域 ${Math.round((block.region.x || 0) * 100)}%,${Math.round((block.region.y || 0) * 100)}%` : block.extraction_method}</div><div className="mt-2 flex items-center justify-between"><span className="text-[9px] text-warning">待人工确认</span><div className="flex gap-1"><button title="确认内容" onClick={() => handleBlockReview(material, block.block_id, true)} className="rounded border border-border p-1 text-success"><Check className="h-3 w-3" /></button><button title="否定内容" onClick={() => handleBlockReview(material, block.block_id, false)} className="rounded border border-border p-1 text-destructive"><X className="h-3 w-3" /></button></div></div></div>)}</div>)}</div>
             </div>
-            {judgment && (judgment.view_points.length > 0 || judgment.red_team_challenges.length > 0) && <div className="mb-4 grid grid-cols-2 gap-4"><div className="rounded-lg border border-border bg-card p-4"><div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-foreground">观点比较</div><span className="text-[10px] text-muted-foreground">{judgment.sell_side_source_count} 个卖方来源</span></div>{judgment.view_points.map(point => <div key={`${point.point_type}-${point.topic}`} className="mt-2 rounded-md border border-border bg-secondary/20 p-3"><Badge className="border-border bg-secondary text-muted-foreground">{point.point_type}</Badge><div className="mt-2 text-xs font-medium text-foreground">{point.topic}</div><div className="mt-1 text-xs text-muted-foreground">{point.detail}</div>{point.buyer_verification_question && <div className="mt-2 text-[10px] text-warning">买方验证：{point.buyer_verification_question}</div>}</div>)}</div><div className="rounded-lg border border-border bg-card p-4"><div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-foreground">Red Team</div><span className="text-[10px] text-destructive">{judgment.unresolved_critical_count} 个关键缺口</span></div>{judgment.red_team_challenges.map(item => <div key={item.challenge_id} className="mt-2 rounded-md border border-border bg-secondary/20 p-3"><div className="flex items-center justify-between"><span className="text-xs font-medium text-foreground">{item.title}</span><Badge className={item.severity === 'critical' ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'border-warning/30 bg-warning/10 text-warning'}>{item.severity}</Badge></div><div className="mt-1 text-xs text-muted-foreground">{item.mechanism}</div><div className="mt-2 text-[10px] text-warning">推翻测试：{item.falsification_test}</div></div>)}</div></div>}
+            {!!documentViews.length && <section className="mb-5"><div className="mb-3"><h2 className="text-sm font-semibold text-foreground">逐篇资料观点</h2><p className="mt-1 text-xs text-muted-foreground">保留每份来源各自的主张和支撑信息，避免先入为主地合并观点。</p></div><div className="grid grid-cols-3 gap-3">{documentViews.map((view, index) => <article key={view.source_id} className="rounded-lg border border-border bg-card p-4"><div className="mb-2 flex items-start justify-between gap-3"><div className="text-xs font-medium text-primary">资料 {index + 1}</div><div className="font-mono text-[9px] text-muted-foreground">{view.evidence_ids.length} 条证据</div></div><h3 className="line-clamp-2 text-xs font-medium leading-5 text-foreground">{view.title}</h3><p className="mt-3 text-sm leading-6 text-foreground">{view.main_view}</p>{!!view.supporting_points.length && <div className="mt-3 border-t border-border pt-3">{view.supporting_points.map(point => <p key={point} className="mt-1 text-xs leading-5 text-muted-foreground">· {point}</p>)}</div>}</article>)}</div></section>}
             {!!graph?.conflicts.length && (
               <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
                 <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive"><AlertTriangle className="h-4 w-4" />来源冲突</div>
@@ -575,6 +514,26 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
           </TabsContent>
 
           <TabsContent value="thesis">
+            <div className="mb-5 border-b border-border pb-4">
+              <div className="text-base font-semibold text-foreground">研究判断与投资逻辑</div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">综合多份资料形成可验证的判断，明确支持证据、反证、关键假设、核心变量、情景与推翻条件。</p>
+            </div>
+            {!!substantiveViewPoints.length ? (
+              <section className="mb-5">
+                <div className="mb-3 flex items-center gap-2"><GitCompareArrows className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">跨资料综合分析</h2></div>
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                  {comparisonSections.map(({ label, points }) => <div key={label} className="grid grid-cols-[140px_1fr] border-b border-border last:border-b-0"><div className="bg-secondary/30 px-4 py-4 text-xs font-medium text-muted-foreground">{label}</div><div className="space-y-3 px-5 py-4">{points.length ? points.map(point => <div key={point.topic}><p className="text-sm leading-6 text-foreground">{point.detail}</p><div className="mt-1 font-mono text-[9px] text-muted-foreground">{point.evidence_ids.length} 条证据 · {point.source_ids.length || judgment?.sell_side_source_count || 0} 个来源</div></div>) : <p className="text-xs text-muted-foreground">当前资料没有形成可追溯的{label}结论。</p>}</div></div>)}
+                </div>
+                {!!otherConclusionPoints.length && <div className="mt-4 grid grid-cols-2 gap-3">{otherConclusionPoints.map(point => <div key={point.topic} className="rounded-lg border border-border bg-card p-4"><div className="text-xs font-medium text-foreground">{point.topic}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{point.detail}</p></div>)}</div>}
+                {!!verificationPoints.length && <div className="mt-4 rounded-lg border border-warning/25 bg-warning/5 p-4"><div className="text-xs font-medium text-warning">需要独立验证</div>{verificationPoints.map(point => <p key={point.topic} className="mt-2 text-sm leading-6 text-foreground">{point.detail}</p>)}</div>}
+              </section>
+            ) : <section className="mb-5 rounded-lg border border-warning/25 bg-warning/5 p-4"><div className="text-sm font-medium text-foreground">跨资料比较暂无可靠结论</div><p className="mt-1 text-xs leading-5 text-muted-foreground">逐篇资料观点已保留在 Evidence。当前资料缺少统一预测期间、关键参数或明确相反立场，因此不强行编造共识与分歧。</p></section>}
+
+            {!!coreAssumptions.length && <section className="mb-5"><div className="mb-3 flex items-center gap-2"><Lightbulb className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">资料隐含的核心假设</h2></div><div className="overflow-hidden rounded-lg border border-border bg-card">{coreAssumptions.map((assumption, index) => <div key={`${assumption.statement}-${index}`} className="grid grid-cols-[44px_1fr] border-b border-border last:border-b-0"><div className="bg-secondary/30 px-3 py-4 text-center font-mono text-[10px] text-muted-foreground">{String(index + 1).padStart(2, '0')}</div><div className="px-5 py-4"><p className="text-sm leading-6 text-foreground">{assumption.statement}</p>{assumption.verification_question && <p className="mt-2 text-xs leading-5 text-muted-foreground">验证问题：{assumption.verification_question}</p>}</div></div>)}</div></section>}
+
+            {quality && <ValuationPanel projectId={selectedProjectId} quality={quality} onUpdated={setQuality} />}
+            {judgment && judgment.red_team_challenges.length > 0 && <section className="mb-5 rounded-lg border border-border bg-card p-4"><div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-foreground">反证审查</div><span className="text-[10px] text-destructive">{judgment.unresolved_critical_count} 个关键缺口</span></div><div className="grid grid-cols-2 gap-3">{judgment.red_team_challenges.map(item => <div key={item.challenge_id} className="rounded-md border border-border bg-secondary/20 p-3"><div className="flex items-center justify-between"><span className="text-xs font-medium text-foreground">{item.title}</span><Badge className={item.severity === 'critical' ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'border-warning/30 bg-warning/10 text-warning'}>{item.severity}</Badge></div><div className="mt-1 text-xs text-muted-foreground">{item.mechanism}</div><div className="mt-2 text-[10px] text-warning">推翻测试：{item.falsification_test}</div></div>)}</div></section>}
+
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
               <div className="space-y-4 rounded-lg border border-border bg-card p-5">
                 <Field label="核心观点"><Textarea value={draft.core_view} onChange={event => setDraft({ ...draft, core_view: event.target.value })} className="min-h-24 bg-secondary/30" placeholder="写下当前核心研究观点，不写买入或卖出建议" /></Field>
@@ -613,8 +572,8 @@ export function ResearchWorkspacePanel({ isLoggedIn, projectId, companyName, onL
               <div className="rounded-lg border border-border bg-card p-6 text-center">
                 <ShieldCheck className="mx-auto h-8 w-8 text-primary" />
                 <div className="mt-3 text-sm font-semibold text-foreground">AI投委会答辩</div>
-                <p className="mx-auto mt-1 max-w-lg text-xs leading-relaxed text-muted-foreground">基金经理、行业研究员、财务研究员和风控负责人将根据你的Thesis与证据逐轮追问。</p>
-                <Button className="mt-4" onClick={handleStartDefense} disabled={saving || !theses.length}>{theses.length ? '开始答辩' : '请先保存 Thesis'}</Button>
+                <p className="mx-auto mt-1 max-w-lg text-xs leading-relaxed text-muted-foreground">基金经理、投资总监、行业研究员和风控负责人将根据你的 Thesis、最新 Memo 与证据逐轮追问。</p>
+                <Button className="mt-4" onClick={handleStartDefense} disabled={saving || !theses.length || !memoVersionCount}>{!theses.length ? '请先保存 Thesis' : !memoVersionCount ? '请先生成 Memo' : '开始答辩'}</Button>
               </div>
             )}
             {activeDefense && currentTurn && (

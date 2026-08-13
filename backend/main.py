@@ -451,9 +451,12 @@ def create_defense(project_id: str, current_user: AuthUser = Depends(get_current
     theses = list_thesis_versions(current_user.user_id, project_id)
     if not theses:
         raise HTTPException(status_code=400, detail="请先完成 Thesis Builder")
+    memos = list_memo_versions(current_user.user_id, project_id)
+    if not memos:
+        raise HTTPException(status_code=400, detail="请先生成研究 Memo")
     graph = get_project_evidence_graph(current_user.user_id, project_id) or EvidenceGraph()
     prior_errors = [str(event.metadata.get("error_code")) for event in list_behavior_events(current_user.user_id) if event.project_id != project_id and event.metadata.get("error_code")]
-    return save_defense_session(current_user.user_id, start_defense(project_id, theses[-1], graph, prior_errors=prior_errors[-10:]))
+    return save_defense_session(current_user.user_id, start_defense(project_id, theses[-1], graph, prior_errors=prior_errors[-10:], memo=memos[-1]))
 
 
 @app.post("/api/defense/{session_id}/answer", response_model=DefenseSession)
@@ -463,8 +466,10 @@ def submit_defense_answer(session_id: str, request: DefenseAnswerRequest, curren
     theses = list_thesis_versions(current_user.user_id, session.project_id)
     thesis = next((item for item in theses if item.thesis_id == session.thesis_id), None)
     if not thesis: raise HTTPException(status_code=404, detail="答辩对应的 Thesis 已不存在")
+    memos = list_memo_versions(current_user.user_id, session.project_id)
+    memo = next((item for item in memos if item.memo_version_id == session.memo_version_id), None) if session.memo_version_id else (memos[-1] if memos else None)
     graph = get_project_evidence_graph(current_user.user_id, session.project_id) or EvidenceGraph()
-    try: session = answer_defense(session, thesis, graph, request.answer, request.evidence_ids)
+    try: session = answer_defense(session, thesis, graph, request.answer, request.evidence_ids, memo=memo)
     except ValueError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
     saved = save_defense_session(current_user.user_id, session)
     sync_defense_tasks(current_user.user_id, saved)
